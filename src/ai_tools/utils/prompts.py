@@ -1,4 +1,4 @@
-\"\"\"Prompt-building utilities for proofreading tools.
+"""Prompt-building utilities for proofreading tools.
 
 The server code and any future clients should call
 ```
@@ -10,7 +10,7 @@ Design:
 • Relies on the shared settings instance provided by
   :pyfunc:`ai_tools.utils.config.get_settings`.
 • Handles optional *instructions* and *can_rewrite* flag.
-\"\"\"
+"""
 
 from __future__ import annotations
 
@@ -21,10 +21,10 @@ def build_proofread_prompt(
     *,
     text: str,
     context_key: str,
-    instructions: str = \"\",
+    instructions: str = "",
     can_rewrite: bool = False,
 ) -> str:
-    \"\"\"Return a formatted proofreading prompt.
+    """Return a formatted proofreading prompt.
 
     Parameters
     ----------
@@ -42,15 +42,15 @@ def build_proofread_prompt(
     -------
     str
         Fully formatted prompt ready for LLM chat completion.
-    \"\"\"
+    """
     settings = get_settings()
     prompts_cfg = settings.prompts
 
     # Resolve context phrase
     context = prompts_cfg.contexts[context_key]
     if instructions:
-        context += f\" Additional notes: {instructions}\"
-
+        context += f" Additional notes: {instructions}"
+    
     prompt = prompts_cfg.base_proofread.format(
         context=context,
         text=text,
