@@ -52,7 +52,27 @@ def main() -> int:
             compartment_id=settings.oci.compartment_id,
         )
 
-        model_list_path = Path(settings.testing.models_file)
+        # Always resolve model file relative to the config file if path is not absolute
+        model_file = settings.testing.models_file
+        model_list_path = Path(model_file)
+        if not model_list_path.is_absolute():
+            # Try to resolve relative to config.yaml location
+            config_file = os.environ.get("AI_TOOLS_CONFIG")
+            if config_file:
+                base_dir = Path(config_file).parent.resolve()
+            else:
+                # Walk upward from this script to find config.yaml
+                path = Path(__file__).resolve()
+                found = False
+                for parent in (path.parent, *path.parents):
+                    candidate = parent / "config.yaml"
+                    if candidate.exists():
+                        base_dir = candidate.parent
+                        found = True
+                        break
+                if not found:
+                    base_dir = Path.cwd()
+            model_list_path = (base_dir / model_file).resolve()
         models = parse_models(model_list_path)
 
         results: List[Tuple[float, str, str]] = []
