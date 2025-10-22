@@ -13,6 +13,7 @@ import paths introduced in the recent refactor.
 
 import sys
 import time
+import os
 from pathlib import Path
 from typing import List, Tuple
 
