@@ -45,7 +45,7 @@ async def test_mcp_connection():
                         "text": test_text,
                         "instructions": "",
                         "can_rewrite": False,
-                        "model": "gpt-4",  # Pass your desired model name here
+                        "model":  "meta.llama-4-scout-17b-16e-instruct",  # Pass your desired model name here
                     }
                 )
                 
