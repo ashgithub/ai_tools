@@ -5,112 +5,47 @@ Provides tools for proofreading text in different contexts: Slack, Email, and No
 Exposed as HTTP endpoint using FastAPI.
 """
 
-import os
 import sys
 from typing import Optional
 
-import yaml
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .oci_client import OciOpenAI, OCIUserPrincipleAuth
+from ai_tools.oci_client import OciOpenAI, OCIUserPrincipleAuth
+from ai_tools.utils.config import get_settings
+from ai_tools.utils.prompts import build_proofread_prompt
 
-
-class OCIConfig(BaseModel):
-    service_endpoint: str = Field(default="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com")
-    compartment_id: str = Field(default="ocid1.compartment.oc1..aaaaaaaac3cxhzoka75zaaysugzmvhm3ni3keqvikawjxvwpz26mud622owa")
-    profile_name: str = Field(default="API-USER")
-    default_model: str = Field(default="xai.grok-4-fast-non-reasoning")
-
-
-class ServerConfig(BaseModel):
-    host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8000)
-    transport: str = Field(default="sse")
-
-
-class PromptsConfig(BaseModel):
-    base_proofread: str
-    rewrite_allowed: str
-    rewrite_forbidden: str
-    output_instruction: str
-    contexts: dict[str, str]
-
-
-class TestingConfig(BaseModel):
-    models_file: str = Field(default="docs/llm_models.md")
-    results_dir: str = Field(default="results")
-    test_prompt: str = Field(default="what can you do better than any other llm in one sentence")
-
-
-class Config(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        env_prefix="",
-        extra="ignore",
-    )
-
-    oci: OCIConfig = Field(default_factory=OCIConfig)
-    server: ServerConfig = Field(default_factory=ServerConfig)
-    prompts: PromptsConfig
-    testing: TestingConfig = Field(default_factory=TestingConfig)
-
-
-# Load configuration from yaml and env
-def load_config():
-    config_data = {}
-    try:
-        with open("config.yaml", "r", encoding="utf-8") as f:
-            config_data = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        pass  # Use defaults if no config file
-
-    return Config(**config_data)
-
-
-config = load_config()
-
-# Initialize MCP server with stateless HTTP
+settings = get_settings()
 mcp = FastMCP("proofread-server")
-
-# Global client instance
-oci_client: Optional[OciOpenAI] = None
-
+_oci_client: Optional[OciOpenAI] = None
 
 def get_oci_client() -> OciOpenAI:
-    """Get or create OCI OpenAI client."""
-    global oci_client
-    if oci_client is None:
-        oci_client = OciOpenAI(
-            service_endpoint=config.oci.service_endpoint,
-            auth=OCIUserPrincipleAuth(profile_name=config.oci.profile_name),
-            compartment_id=config.oci.compartment_id,
+    global _oci_client
+    if _oci_client is None:
+        _oci_client = OciOpenAI(
+            service_endpoint=settings.oci.service_endpoint,
+            auth=OCIUserPrincipleAuth(profile_name=settings.oci.profile_name),
+            compartment_id=settings.oci.compartment_id,
         )
-    return oci_client
+    return _oci_client
 
-
-def create_proofread_prompt(
-    text: str, context: str, instructions: str, can_rewrite: bool
-) -> str:
-    """Create a proofreading prompt based on context and rewrite permissions."""
-
-    base_prompt = config.prompts.base_proofread.format(
-        context=context,
-        text=text,
-        instructions=instructions
-    )
-
-    if can_rewrite:
-        base_prompt += config.prompts.rewrite_allowed
-    else:
-        base_prompt += config.prompts.rewrite_forbidden
-
-    base_prompt += config.prompts.output_instruction
-
-    return base_prompt
-
+def _do_proofread(context_key: str, text: str, instructions: str, can_rewrite: bool, max_tokens: int) -> str:
+    try:
+        client = get_oci_client()
+        prompt = build_proofread_prompt(
+            text=text,
+            context_key=context_key,
+            instructions=instructions,
+            can_rewrite=can_rewrite,
+        )
+        response = client.chat.completions.create(
+            model=settings.oci.default_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Error proofreading ({context_key}) text: {str(e)}"
 
 @mcp.tool()
 async def proofread_slack(
@@ -118,36 +53,14 @@ async def proofread_slack(
 ) -> str:
     """
     Proofread text for Slack communication.
-
-    Args:
-        text: The original text to proofread
-        instructions: Additional instructions for proofreading
-        can_rewrite: If true, allow rewriting for better clarity; if false, only fix errors
-
-    Returns:
-        Proofread text suitable for Slack
     """
-    try:
-        client = get_oci_client()
-
-        context = config.prompts.contexts["slack"]
-        if instructions:
-            context += f" Additional notes: {instructions}"
-
-        prompt = create_proofread_prompt(text, context, instructions, can_rewrite)
-
-        response = client.chat.completions.create(
-            model=config.oci.default_model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000,
-            temperature=0.3,
-        )
-
-        return response.choices[0].message.content.strip()
-
-    except Exception as e:
-        return f"Error proofreading Slack text: {str(e)}"
-
+    return _do_proofread(
+        context_key="slack",
+        text=text,
+        instructions=instructions,
+        can_rewrite=can_rewrite,
+        max_tokens=1000,
+    )
 
 @mcp.tool()
 async def proofread_email(
@@ -155,36 +68,14 @@ async def proofread_email(
 ) -> str:
     """
     Proofread text for email communication.
-
-    Args:
-        text: The original text to proofread
-        instructions: Additional instructions for proofreading
-        can_rewrite: If true, allow rewriting for better clarity; if false, only fix errors
-
-    Returns:
-        Proofread text suitable for email
     """
-    try:
-        client = get_oci_client()
-
-        context = config.prompts.contexts["email"]
-        if instructions:
-            context += f" Additional notes: {instructions}"
-
-        prompt = create_proofread_prompt(text, context, instructions, can_rewrite)
-
-        response = client.chat.completions.create(
-            model=config.oci.default_model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000,
-            temperature=0.3,
-        )
-
-        return response.choices[0].message.content.strip()
-
-    except Exception as e:
-        return f"Error proofreading email text: {str(e)}"
-
+    return _do_proofread(
+        context_key="email",
+        text=text,
+        instructions=instructions,
+        can_rewrite=can_rewrite,
+        max_tokens=2000,
+    )
 
 @mcp.tool()
 async def proofread_text(
@@ -192,40 +83,16 @@ async def proofread_text(
 ) -> str:
     """
     Proofread general text.
-
-    Args:
-        text: The original text to proofread
-        instructions: Additional instructions for proofreading
-        can_rewrite: If true, allow rewriting for better clarity; if false, only fix errors
-
-    Returns:
-        Proofread general text
     """
-    try:
-        client = get_oci_client()
-
-        context = config.prompts.contexts["general"]
-        if instructions:
-            context += f" Additional notes: {instructions}"
-
-        prompt = create_proofread_prompt(text, context, instructions, can_rewrite)
-
-        response = client.chat.completions.create(
-            model=config.oci.default_model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000,
-            temperature=0.3,
-        )
-
-        return response.choices[0].message.content.strip()
-
-    except Exception as e:
-        return f"Error proofreading text: {str(e)}"
-
+    return _do_proofread(
+        context_key="general",
+        text=text,
+        instructions=instructions,
+        can_rewrite=can_rewrite,
+        max_tokens=2000,
+    )
 
 def main():
-    """Main entry point for running the server."""
-    # Initialize OCI client
     try:
         get_oci_client()
         print("✓ OCI OpenAI client initialized successfully")
@@ -233,9 +100,11 @@ def main():
         print(f"✗ Failed to initialize OCI client: {e}")
         sys.exit(1)
 
-    # Run the MCP server with SSE transport (for MCP SDK compatibility)
-    mcp.run(transport=config.server.transport, host=config.server.host, port=config.server.port)
-
+    mcp.run(
+        transport=settings.server.transport,
+        host=settings.server.host,
+        port=settings.server.port,
+    )
 
 if __name__ == "__main__":
     main()
