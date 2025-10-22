@@ -44,7 +44,8 @@ async def test_mcp_connection():
                     arguments={
                         "text": test_text,
                         "instructions": "",
-                        "can_rewrite": False
+                        "can_rewrite": False,
+                        "model": "gpt-4",  # Pass your desired model name here
                     }
                 )
                 
