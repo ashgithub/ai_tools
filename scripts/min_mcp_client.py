@@ -55,7 +55,7 @@ def print_techlookup_commands(result):
     print(f"\nResult: {result}")
     if result.content and len(result.content) > 0:
         print("\n✓ Command alternatives:")
-        for c in result.content[0].value:
+        for c in result.content[0].text:
             print("  -", c)
     else:
         print("✗ No command output in result")

@@ -116,10 +116,11 @@ def main():
         print(f"✗ Failed to initialize OCI client: {e}")
         sys.exit(1)
     
+    server_cfg = settings.servers.proofread
     mcp.run(
-        transport=settings.server.transport,
-        host=settings.server.host,
-        port=settings.server.port,
+        transport=server_cfg.transport,
+        host=server_cfg.host,
+        port=server_cfg.port,
     )
 
 

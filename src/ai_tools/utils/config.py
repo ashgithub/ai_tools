@@ -48,6 +48,20 @@ class Server(BaseModel, extra="forbid"):
     transport: str = Field(default="sse")
 
 
+class MCPServer(BaseModel, extra="forbid"):
+    """Configuration for a single MCP server instance."""
+    host: str = Field(default="0.0.0.0")
+    port: int = Field(default=8000)
+    transport: str = Field(default="sse")
+
+
+class Servers(BaseModel, extra="forbid"):
+    """Grouping of all MCP servers (proofread, techtool, summarization, ...)."""
+    proofread: MCPServer = MCPServer(port=8000)
+    techtool: MCPServer = MCPServer(port=8001)
+    summarization: MCPServer = MCPServer(port=8002)
+
+
 class Prompts(BaseModel, extra="forbid"):
     base_proofread: str = Field(default="")
     rewrite_allowed: str = Field(default="")
@@ -77,7 +91,7 @@ class Settings(BaseSettings):
     )
 
     oci: OCI = OCI()
-    server: Server = Server()
+    servers: "Servers" = Servers()  # type: ignore[name-defined]
     prompts: Prompts = Prompts()
     testing: Testing = Testing()
 
@@ -120,4 +134,13 @@ def get_settings() -> Settings:
     return Settings(**data)
 
 
-__all__ = ["OCI", "Server", "Prompts", "Testing", "Settings", "get_settings"]
+__all__ = [
+    "OCI",
+    "MCPServer",
+    "Servers",
+    "Server",
+    "Prompts",
+    "Testing",
+    "Settings",
+    "get_settings",
+]

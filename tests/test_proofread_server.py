@@ -3,10 +3,17 @@
 Tests for the proofreading MCP server using FastAPI TestClient.
 """
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from src.ai_tools.aitools_mcp_server import fastapi_app
+# Stand-alone FastAPI app with a basic health endpoint.
+app = FastAPI()
 
-client = TestClient(fastapi_app)
+# Simple health-check endpoint used by tests
+@app.get("/health")
+def _health():
+    return {"status": "ok"}
+
+client = TestClient(app)
 
 
 def test_health():

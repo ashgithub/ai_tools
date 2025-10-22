@@ -9,10 +9,19 @@ oci:
   default_model: "xai.grok-4-fast-non-reasoning"
 
 # Server Configuration
-server:
-  host: "0.0.0.0"
-  port: 8000
-  transport: "sse"
+servers:
+  proofread:
+    host: "0.0.0.0"
+    port: 8000
+    transport: "sse"
+  techtool:
+    host: "0.0.0.0"
+    port: 8001
+    transport: "sse"
+  summarization:
+    host: "0.0.0.0"
+    port: 8002
+    transport: "sse"
 
 # Prompts
 prompts:
