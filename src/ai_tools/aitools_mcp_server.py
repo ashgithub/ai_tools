@@ -28,7 +28,13 @@ def get_oci_client() -> OciOpenAI:
 
 
 def do_proofread(
-    *, context_key: str, text: str, instructions: str = "", can_rewrite: bool = False, max_tokens: int = 1000
+    *,
+    context_key: str,
+    text: str,
+    instructions: str = "",
+    can_rewrite: bool = False,
+    max_tokens: int = 1000,
+    model: Optional[str] = None,
 ) -> str:
     """
     Perform the actual proofreading call.
@@ -42,8 +48,9 @@ def do_proofread(
             instructions=instructions,
             can_rewrite=can_rewrite,
         )
+        model_name = model if model is not None else settings.oci.default_model
         response = client.chat.completions.create(
-            model=settings.oci.default_model,
+            model=model_name,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=0.3,
@@ -61,7 +68,8 @@ def make_tool(context_key: str, max_tokens: int, description: str) -> Callable:
     async def tool(
         text: Annotated[str, "The text content to proofread and check for errors"],
         instructions: Annotated[str, "Optional specific instructions or focus areas for proofreading (e.g., 'check for passive voice', 'make more concise')"] = "",
-        can_rewrite: Annotated[bool, "If True, allows complete rewriting of the text. If False, only provides suggestions and corrections without rewriting"] = False
+        can_rewrite: Annotated[bool, "If True, allows complete rewriting of the text. If False, only provides suggestions and corrections without rewriting"] = False,
+        model: Annotated[Optional[str], "LLM model name to use for proofreading. If not specified, uses the default model."] = None,
     ) -> str:
         """
         Proofread and improve text based on the specified context.
@@ -76,6 +84,7 @@ def make_tool(context_key: str, max_tokens: int, description: str) -> Callable:
             instructions=instructions,
             can_rewrite=can_rewrite,
             max_tokens=max_tokens,
+            model=model,
         )
     
     return tool
