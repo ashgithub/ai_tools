@@ -7,6 +7,7 @@ Tests basic connection and tool calling.
 import asyncio
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+from ai_tools.utils.config import get_settings
 
 
 async def test_mcp_connection():
