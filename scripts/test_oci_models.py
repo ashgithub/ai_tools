@@ -1,138 +1,144 @@
-#!/usr/bin/env uv run
-"""
-Benchmark multiple OCI Generative AI models.
-
-The script iterates through the list of models documented in
-`settings.testing.models_file`, sends a single prompt to each model,
-measures latency, and writes a Markdown report to
-`settings.testing.results_dir`.
-
-This refactored version uses the centralised settings loader and modern
-import paths introduced in the recent refactor.
-"""
-
-import sys
-import time
-import os
-from pathlib import Path
-from typing import List, Tuple
-
-from ai_tools.oci_client import OciOpenAI, OCIUserPrincipleAuth
-from ai_tools.utils.config import get_settings
-
-settings = get_settings()
-
-
-def parse_models(file_path: Path) -> List[str]:
-    """Return a list of model identifiers parsed from the docs file."""
-    models: List[str] = []
-    for line in file_path.read_text(encoding="utf-8").splitlines():
-        if line.strip().startswith("- "):  # bullet list in docs
-            model = line.split(" – ")[0].removeprefix("- ").strip()
-            models.append(model)
-    return models
-
-
-def query_model(client: OciOpenAI, model: str) -> Tuple[float, str]:
-    """Send the test prompt to *model* and return (elapsed_seconds, answer)."""
-    start = time.perf_counter()
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": settings.testing.test_prompt}],
-    )
-    elapsed = time.perf_counter() - start
-    answer = response.choices[0].message.content
-    return elapsed, answer
-
-
-def main() -> int:
-    try:
-        client = OciOpenAI(
-            service_endpoint=settings.oci.service_endpoint,
-            auth=OCIUserPrincipleAuth(profile_name=settings.oci.profile_name),
-            compartment_id=settings.oci.compartment_id,
-        )
-
-        # Always resolve model file relative to the config file if path is not absolute
-        model_file = settings.testing.models_file
-        model_list_path = Path(model_file)
-        if not model_list_path.is_absolute():
-            # Try to resolve relative to config.yaml location
-            config_file = os.environ.get("AI_TOOLS_CONFIG")
-            if config_file:
-                base_dir = Path(config_file).parent.resolve()
-            else:
-                # Walk upward from this script to find config.yaml
-                path = Path(__file__).resolve()
-                found = False
-                for parent in (path.parent, *path.parents):
-                    candidate = parent / "config.yaml"
-                    if candidate.exists():
-                        base_dir = candidate.parent
-                        found = True
-                        break
-                if not found:
-                    base_dir = Path.cwd()
-            model_list_path = (base_dir / model_file).resolve()
-        models = parse_models(model_list_path)
-
-        results: List[Tuple[float, str, str]] = []
-        errors: List[Tuple[str, str]] = []
-
-        for model in models:
-            print(f"⏳ Testing model {model} …")
-            try:
-                elapsed, answer = query_model(client, model)
-                results.append((elapsed, model, answer))
-            except Exception as exc:  # noqa: BLE001
-                errors.append((model, str(exc)))
-
-        # sort for readability
-        results.sort(key=lambda t: t[0])  # fastest first
-        errors.sort(key=lambda t: t[0])
-
-        # ensure results directory
-        results_dir = Path(settings.testing.results_dir)
-        results_dir.mkdir(parents=True, exist_ok=True)
-        md_path = results_dir / "results.md"
-
-        # ── console summary ────────────────────────────────────────────────────
-        print("\n| Model | Time (s) | Answer |")
-        print("|-------|----------|--------|")
-        for elapsed, model, answer in results:
-            print(f"| {model} | {elapsed:.2f} | {answer} |")
-        if errors:
-            print("\n| Model | Status | Details |")
-            print("|-------|--------|---------|")
-            for model, detail in errors:
-                print(f"| {model} | Error | {detail} |")
-
-        # ── write markdown ─────────────────────────────────────────────────────
-        with md_path.open("w", encoding="utf-8") as fd:
-            fd.write("| Model | Time (s) | Answer |\n|-------|----------|--------|\n")
-            for elapsed, model, answer in results:
-                fd.write(f"| {model} | {elapsed:.2f} | {answer} |\n")
-
-            if errors:
-                fd.write("\n| Model | Status | Details |\n|-------|--------|---------|\n")
-                for model, detail in errors:
-                    fd.write(f"| {model} | Error | {detail} |\n")
-
-            total = len(results) + len(errors)
-            fd.write(
-                f"\n**Summary:** Tested {total} models. "
-                f"Successful: {len(results)}, Errors: {len(errors)}\n"
-            )
-            all_models = sorted([m for _, m, _ in results] + [m for m, _ in errors])
-            fd.write("**Models tested:** " + ", ".join(all_models) + "\n")
-
-        print(f"\nMarkdown report written to {md_path}")
-    except Exception as exc:  # noqa: BLE001
-        print(f"Fatal error: {exc}")
-        return 1
-
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+#!/usr/bin/env uv run                                                                                                                                                                                                                                     
+"""                                                                                                                                                                                                                                                       
+Benchmark multiple OCI Generative AI models.                                                                                                                                                                                                              
+                                                                                                                                                                                                                                                          
+The script iterates through the list of models documented in                                                                                                                                                                                              
+`settings.testing.models_file`, sends a single prompt to each model,                                                                                                                                                                                      
+measures latency, and writes a Markdown report to                                                                                                                                                                                                         
+`settings.testing.results_dir`.                                                                                                                                                                                                                           
+                                                                                                                                                                                                                                                          
+This refactored version uses the centralised settings loader and modern                                                                                                                                                                                   
+import paths introduced in the recent refactor.                                                                                                                                                                                                           
+"""                                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                                          
+import sys                                                                                                                                                                                                                                                
+import time                                                                                                                                                                                                                                               
+import os                                                                                                                                                                                                                                                 
+from pathlib import Path                                                                                                                                                                                                                                  
+from typing import List, Tuple                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                          
+from ai_tools.oci_client import OciOpenAI, OCIUserPrincipleAuth                                                                                                                                                                                           
+from ai_tools.utils.config import get_settings                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                          
+settings = get_settings()                                                                                                                                                                                                                                 
+                                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                          
+def get_model_list_path() -> Path:                                                                                                                                                                                                                        
+    """Resolve the absolute path to the models file, relative to config file if needed."""                                                                                                                                                                
+    model_file = settings.testing.models_file                                                                                                                                                                                                             
+    model_list_path = Path(model_file)                                                                                                                                                                                                                    
+    if model_list_path.is_absolute():                                                                                                                                                                                                                     
+        return model_list_path                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                          
+    config_file = os.environ.get("AI_TOOLS_CONFIG")                                                                                                                                                                                                       
+    if config_file:                                                                                                                                                                                                                                       
+        base_dir = Path(config_file).parent.resolve()                                                                                                                                                                                                     
+    else:                                                                                                                                                                                                                                                 
+        # Walk upward from this script to find config.yaml                                                                                                                                                                                                
+        path = Path(__file__).resolve()                                                                                                                                                                                                                   
+        found = False                                                                                                                                                                                                                                     
+        for parent in (path.parent, *path.parents):                                                                                                                                                                                                       
+            candidate = parent / "config.yaml"                                                                                                                                                                                                            
+            if candidate.exists():                                                                                                                                                                                                                        
+                base_dir = candidate.parent                                                                                                                                                                                                               
+                found = True                                                                                                                                                                                                                              
+                break                                                                                                                                                                                                                                     
+        if not found:                                                                                                                                                                                                                                     
+            base_dir = Path.cwd()                                                                                                                                                                                                                         
+    return (base_dir / model_file).resolve()                                                                                                                                                                                                              
+                                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                          
+def parse_models(file_path: Path) -> List[str]:                                                                                                                                                                                                           
+    """Return a list of model identifiers parsed from the docs file."""                                                                                                                                                                                   
+    models: List[str] = []                                                                                                                                                                                                                                
+    for line in file_path.read_text(encoding="utf-8").splitlines():                                                                                                                                                                                       
+        if line.strip().startswith("- "):  # bullet list in docs                                                                                                                                                                                          
+            model = line.split(" – ")[0].removeprefix("- ").strip()                                                                                                                                                                                       
+            models.append(model)                                                                                                                                                                                                                          
+    return models                                                                                                                                                                                                                                         
+                                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                          
+def query_model(client: OciOpenAI, model: str) -> Tuple[float, str]:                                                                                                                                                                                      
+    """Send the test prompt to *model* and return (elapsed_seconds, answer)."""                                                                                                                                                                           
+    start = time.perf_counter()                                                                                                                                                                                                                           
+    response = client.chat.completions.create(                                                                                                                                                                                                            
+        model=model,                                                                                                                                                                                                                                      
+        messages=[{"role": "user", "content": settings.testing.test_prompt}],                                                                                                                                                                             
+    )                                                                                                                                                                                                                                                     
+    elapsed = time.perf_counter() - start                                                                                                                                                                                                                 
+    answer = response.choices[0].message.content                                                                                                                                                                                                          
+    return elapsed, answer                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                          
+def main() -> int:                                                                                                                                                                                                                                        
+    try:                                                                                                                                                                                                                                                  
+        client = OciOpenAI(                                                                                                                                                                                                                               
+            service_endpoint=settings.oci.service_endpoint,                                                                                                                                                                                               
+            auth=OCIUserPrincipleAuth(profile_name=settings.oci.profile_name),                                                                                                                                                                            
+            compartment_id=settings.oci.compartment_id,                                                                                                                                                                                                   
+        )                                                                                                                                                                                                                                                 
+                                                                                                                                                                                                                                                          
+        model_list_path = get_model_list_path()                                                                                                                                                                                                           
+        models = parse_models(model_list_path)                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                          
+        results: List[Tuple[float, str, str]] = []                                                                                                                                                                                                        
+        errors: List[Tuple[str, str]] = []                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                          
+        for model in models:                                                                                                                                                                                                                              
+            print(f"⏳ Testing model {model} …")                                                                                                                                                                                                          
+            try:                                                                                                                                                                                                                                          
+                elapsed, answer = query_model(client, model)                                                                                                                                                                                              
+                results.append((elapsed, model, answer))                                                                                                                                                                                                  
+            except Exception as exc:  # noqa: BLE001                                                                                                                                                                                                      
+                errors.append((model, str(exc)))                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                          
+        # sort for readability                                                                                                                                                                                                                            
+        results.sort(key=lambda t: t[0])  # fastest first                                                                                                                                                                                                 
+        errors.sort(key=lambda t: t[0])                                                                                                                                                                                                                   
+                                                                                                                                                                                                                                                          
+        # ensure results directory                                                                                                                                                                                                                        
+        results_dir = Path(settings.testing.results_dir)                                                                                                                                                                                                  
+        results_dir.mkdir(parents=True, exist_ok=True)                                                                                                                                                                                                    
+        md_path = results_dir / "results.md"                                                                                                                                                                                                              
+                                                                                                                                                                                                                                                          
+        # ── console summary ────────────────────────────────────────────────────                                                                                                                                                                         
+        print("\n| Model | Time (s) | Answer |")                                                                                                                                                                                                          
+        print("|-------|----------|--------|")                                                                                                                                                                                                            
+        for elapsed, model, answer in results:                                                                                                                                                                                                            
+            print(f"| {model} | {elapsed:.2f} | {answer} |")                                                                                                                                                                                              
+        if errors:                                                                                                                                                                                                                                        
+            print("\n| Model | Status | Details |")                                                                                                                                                                                                       
+            print("|-------|--------|---------|")                                                                                                                                                                                                         
+            for model, detail in errors:                                                                                                                                                                                                                  
+                print(f"| {model} | Error | {detail} |")                                                                                                                                                                                                  
+                                                                                                                                                                                                                                                          
+        # ── write markdown ─────────────────────────────────────────────────────                                                                                                                                                                         
+        with md_path.open("w", encoding="utf-8") as fd:                                                                                                                                                                                                   
+            fd.write("| Model | Time (s) | Answer |\n|-------|----------|--------|\n")                                                                                                                                                                    
+            for elapsed, model, answer in results:                                                                                                                                                                                                        
+                fd.write(f"| {model} | {elapsed:.2f} | {answer} |\n")                                                                                                                                                                                     
+                                                                                                                                                                                                                                                          
+            if errors:                                                                                                                                                                                                                                    
+                fd.write("\n| Model | Status | Details |\n|-------|--------|---------|\n")                                                                                                                                                                
+                for model, detail in errors:                                                                                                                                                                                                              
+                    fd.write(f"| {model} | Error | {detail} |\n")                                                                                                                                                                                         
+                                                                                                                                                                                                                                                          
+            total = len(results) + len(errors)                                                                                                                                                                                                            
+            fd.write(                                                                                                                                                                                                                                     
+                f"\n**Summary:** Tested {total} models. "                                                                                                                                                                                                 
+                f"Successful: {len(results)}, Errors: {len(errors)}\n"                                                                                                                                                                                    
+            )                                                                                                                                                                                                                                             
+            all_models = sorted([m for _, m, _ in results] + [m for m, _ in errors])                                                                                                                                                                      
+            fd.write("**Models tested:** " + ", ".join(all_models) + "\n")                                                                                                                                                                                
+                                                                                                                                                                                                                                                          
+        print(f"\nMarkdown report written to {md_path}")                                                                                                                                                                                                  
+    except Exception as exc:  # noqa: BLE001                                                                                                                                                                                                              
+        print(f"Fatal error: {exc}")                                                                                                                                                                                                                      
+        return 1                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                          
+    return 0                                                                                                                                                                                                                                              
+                                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                          
+if __name__ == "__main__":                                                                                                                                                                                                                                
+    sys.exit(main())                                                                                                                                                                                                                                      
+                              
