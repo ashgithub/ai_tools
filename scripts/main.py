@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run
 """
 Simple hello world program demonstrating the OCI OpenAI client.
 This script sends a "Hello World" prompt to the OCI Generative AI service
