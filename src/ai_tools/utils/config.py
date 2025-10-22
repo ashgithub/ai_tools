@@ -12,24 +12,23 @@ This decouples configuration from application logic and ensures that
 all modules share one in-memory Settings instance.
 """
 
-from __future__ import annotations
-
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict
 
+import os
 import yaml
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from yaml import YAMLError
 
 # --------------------------------------------------------------------------- #
 # 1. Low-level typed sections
 # --------------------------------------------------------------------------- #
 
 
-class OCI(BaseModel):
+class OCI(BaseModel, extra="forbid"):
     """OCI-related defaults."""
-
     service_endpoint: str = Field(
         default="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com"
     )
@@ -43,21 +42,21 @@ class OCI(BaseModel):
     default_model: str = Field(default="xai.grok-4-fast-non-reasoning")
 
 
-class Server(BaseModel):
+class Server(BaseModel, extra="forbid"):
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8000)
     transport: str = Field(default="sse")
 
 
-class Prompts(BaseModel):
-    base_proofread: str
-    rewrite_allowed: str
-    rewrite_forbidden: str
-    output_instruction: str
-    contexts: Dict[str, str]
+class Prompts(BaseModel, extra="forbid"):
+    base_proofread: str = Field(default="")
+    rewrite_allowed: str = Field(default="")
+    rewrite_forbidden: str = Field(default="")
+    output_instruction: str = Field(default="")
+    contexts: Dict[str, str] = Field(default_factory=dict)
 
 
-class Testing(BaseModel):
+class Testing(BaseModel, extra="forbid"):
     models_file: str = Field(default="docs/llm_models.md")
     results_dir: str = Field(default="results")
     test_prompt: str = Field(
@@ -79,7 +78,7 @@ class Settings(BaseSettings):
 
     oci: OCI = OCI()
     server: Server = Server()
-    prompts: Prompts
+    prompts: Prompts = Prompts()
     testing: Testing = Testing()
 
 
@@ -90,19 +89,27 @@ class Settings(BaseSettings):
 
 def _read_yaml_config() -> dict[str, Any]:
     """Locate and load ``config.yaml`` searching upward from this file.
-
-    The utils package lives under ``src/ai_tools/utils`` so the repository
-    root is three levels up (``../../..``).  However, to make the function
-    resilient to future layout changes we walk up the directory tree until
-    we find a *config.yaml* file or exhaust parents.
+    Supports override via AI_TOOLS_CONFIG environment variable.
+    Returns empty dict if config is missing or invalid.
     """
-    path = Path(__file__).resolve()
-    for parent in (path, *path.parents):
-        candidate = parent / "config.yaml"
+    config_file = os.environ.get("AI_TOOLS_CONFIG", None)
+    if config_file:
+        config_path = Path(config_file)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file specified by AI_TOOLS_CONFIG not found: {config_file}")
+        candidates = [config_path]
+    else:
+        # Fallback: search upward from this file for config.yaml.
+        path = Path(__file__).resolve()
+        candidates = [(parent / "config.yaml") for parent in (path, *path.parents)]
+
+    for candidate in candidates:
         if candidate.exists():
-            with candidate.open("r", encoding="utf-8") as fh:
-                return yaml.safe_load(fh) or {}
-    # Nothing found → return empty dict so Settings falls back to defaults
+            try:
+                with candidate.open("r", encoding="utf-8") as fh:
+                    return yaml.safe_load(fh) or {}
+            except YAMLError as exc:
+                raise RuntimeError(f"Error parsing config file {candidate}:\n{exc}")
     return {}
 
 
@@ -113,5 +120,4 @@ def get_settings() -> Settings:
     return Settings(**data)
 
 
-# convenient re-export
 __all__ = ["OCI", "Server", "Prompts", "Testing", "Settings", "get_settings"]
