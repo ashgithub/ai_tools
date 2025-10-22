@@ -1,0 +1,48 @@
+# AI Tools Configuration
+# All constants, prompts, configurations, and URLs
+
+# OCI Configuration
+oci:
+  service_endpoint: "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com"
+  compartment_id: "ocid1.compartment.oc1..aaaaaaaac3cxhzoka75zaaysugzmvhm3ni3keqvikawjxvwpz26mud622owa"
+  profile_name: "API-USER"
+  default_model: "xai.grok-4-fast-non-reasoning"
+
+# Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 8000
+  transport: "sse"
+
+# Prompts
+prompts:
+  base_proofread: |
+    You are a professional proofreader. Your task is to improve the following text.
+
+    Context: {context}
+    Original text: "{text}"
+
+    Instructions: {instructions}
+
+  rewrite_allowed: |
+    You CAN rewrite the text to improve clarity, structure, and effectiveness while maintaining the original meaning.
+    Make it more professional, clear, and well-structured.
+
+  rewrite_forbidden: |
+    You CANNOT rewrite the text - only fix typos, grammar, punctuation, and spelling errors.
+    Do not change the wording, structure, or meaning - just correct errors.
+
+  output_instruction: |
+    Return only the corrected/proofread text, nothing else.
+    Do not include quotes around the result unless they are part of the text.
+
+  contexts:
+    slack: "Slack message - keep it concise, friendly, and professional. Use appropriate emojis if they fit naturally."
+    email: "Email message - maintain professional tone, proper grammar, and clear structure. Include appropriate greeting/closing if applicable."
+    general: "General text - improve clarity, grammar, and readability while maintaining the original intent."
+
+# Model Testing
+testing:
+  models_file: "docs/llm_models.md"
+  results_dir: "results"
+  test_prompt: "what can you do better than any other llm in one sentence"

@@ -1,0 +1,38 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.python-version
+.aider*
+
+# IDE and editor files
+.vscode/
+.idea/
+
+# Linting and testing
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage*
+
+# OS files
+.DS_Store
+
+# Environment variables
+.env
+.env.*
+
+# OCI credentials
+~/.oci/
+
+# Logs
+server.log
+
+# Results and outputs
+results/
