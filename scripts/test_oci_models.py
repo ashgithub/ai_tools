@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run
 """
 Benchmark multiple OCI Generative AI models.
 
@@ -11,9 +11,6 @@ This refactored version uses the centralised settings loader and modern
 import paths introduced in the recent refactor.
 """
 
-from __future__ import annotations
-
-import os
 import sys
 import time
 from pathlib import Path
