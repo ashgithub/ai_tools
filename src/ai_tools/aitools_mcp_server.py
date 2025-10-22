@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 MCP Server for proofreading text using LLM models.
-Provides tools for proofreading text in different contexts: Slack, Email, and Normal text.
-Exposed as HTTP endpoint using FastAPI.
+Exposes HTTP endpoints (via FastAPI) for proofreading in Slack, Email, and General contexts
+with configurable LLM, prompt, and rewrite settings.
 """
 
 import sys
-from typing import Optional
+from typing import Optional, Callable
 
 from fastmcp import FastMCP
 
@@ -28,7 +28,13 @@ def get_oci_client() -> OciOpenAI:
         )
     return _oci_client
 
-def _do_proofread(context_key: str, text: str, instructions: str, can_rewrite: bool, max_tokens: int) -> str:
+def do_proofread(
+    *, context_key: str, text: str, instructions: str = "", can_rewrite: bool = False, max_tokens: int = 1000
+) -> str:
+    """
+    Perform the actual proofreading call.
+    Returns result string or error.
+    """
     try:
         client = get_oci_client()
         prompt = build_proofread_prompt(
@@ -47,50 +53,43 @@ def _do_proofread(context_key: str, text: str, instructions: str, can_rewrite: b
     except Exception as e:
         return f"Error proofreading ({context_key}) text: {str(e)}"
 
-@mcp.tool()
-async def proofread_slack(
-    text: str, instructions: str = "", can_rewrite: bool = False
-) -> str:
+def make_tool(context_key: str, max_tokens: int, docstring: str) -> Callable:
     """
-    Proofread text for Slack communication.
+    Generate an MCP tool for a given proofreading context.
     """
-    return _do_proofread(
-        context_key="slack",
-        text=text,
-        instructions=instructions,
-        can_rewrite=can_rewrite,
-        max_tokens=1000,
-    )
+    @mcp.tool()
+    async def tool(
+        text: str, instructions: str = "", can_rewrite: bool = False
+    ) -> str:
+        """{}""".format(docstring)
+        return do_proofread(
+            context_key=context_key,
+            text=text,
+            instructions=instructions,
+            can_rewrite=can_rewrite,
+            max_tokens=max_tokens,
+        )
+    tool.__doc__ = docstring
+    return tool
 
-@mcp.tool()
-async def proofread_email(
-    text: str, instructions: str = "", can_rewrite: bool = False
-) -> str:
-    """
-    Proofread text for email communication.
-    """
-    return _do_proofread(
-        context_key="email",
-        text=text,
-        instructions=instructions,
-        can_rewrite=can_rewrite,
-        max_tokens=2000,
-    )
+# Register each context as a separate tool
+make_tool(
+    context_key="slack",
+    max_tokens=1000,
+    docstring="Proofread text for Slack communication.",
+)
 
-@mcp.tool()
-async def proofread_text(
-    text: str, instructions: str = "", can_rewrite: bool = False
-) -> str:
-    """
-    Proofread general text.
-    """
-    return _do_proofread(
-        context_key="general",
-        text=text,
-        instructions=instructions,
-        can_rewrite=can_rewrite,
-        max_tokens=2000,
-    )
+make_tool(
+    context_key="email",
+    max_tokens=2000,
+    docstring="Proofread text for email communication.",
+)
+
+make_tool(
+    context_key="general",
+    max_tokens=2000,
+    docstring="Proofread general text.",
+)
 
 def main():
     try:
