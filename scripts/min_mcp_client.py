@@ -1,117 +1,74 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run    
 """
-MCP Server for proofreading text using LLM models.
-Exposes HTTP endpoints (via FastAPI) for proofreading in Slack, Email, and General contexts
-with configurable LLM, prompt, and rewrite settings.
+Minimal test client for MCP server using the SDK.
+Tests basic connection and tool calling.
 """
-import sys
-from typing import Optional, Callable
-from fastmcp import FastMCP
-from ai_tools.oci_client import OciOpenAI, OCIUserPrincipleAuth
-from ai_tools.utils.config import get_settings
-from ai_tools.utils.prompts import build_proofread_prompt
 
-settings = get_settings()
-mcp = FastMCP("proofread-server")
-_oci_client: Optional[OciOpenAI] = None
+import asyncio
+from mcp import ClientSession
+from mcp.client.sse import sse_client
 
 
-def get_oci_client() -> OciOpenAI:
-    global _oci_client
-    if _oci_client is None:
-        _oci_client = OciOpenAI(
-            service_endpoint=settings.oci.service_endpoint,
-            auth=OCIUserPrincipleAuth(profile_name=settings.oci.profile_name),
-            compartment_id=settings.oci.compartment_id,
-        )
-    return _oci_client
-
-
-def do_proofread(
-    *, context_key: str, text: str, instructions: str = "", can_rewrite: bool = False, max_tokens: int = 1000
-) -> str:
-    """
-    Perform the actual proofreading call.
-    Returns result string or error.
-    """
-    try:
-        client = get_oci_client()
-        prompt = build_proofread_prompt(
-            text=text,
-            context_key=context_key,
-            instructions=instructions,
-            can_rewrite=can_rewrite,
-        )
-        response = client.chat.completions.create(
-            model=settings.oci.default_model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
-            temperature=0.3,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"Error proofreading ({context_key}) text: {str(e)}"
-
-
-def make_tool(context_key: str, max_tokens: int, description: str) -> Callable:
-    """
-    Generate an MCP tool for a given proofreading context.
-    """
-    @mcp.tool(name=f"proofread_{context_key}", description=description)
-    async def tool(
-        text: str, instructions: str = "", can_rewrite: bool = False
-    ) -> str:
-        """
-        Args:
-            text: The text to proofread
-            instructions: Optional additional instructions for the proofreading
-            can_rewrite: Whether the tool can rewrite the text or just suggest corrections
-        
-        Returns:
-            Proofread text or suggestions
-        """
-        return do_proofread(
-            context_key=context_key,
-            text=text,
-            instructions=instructions,
-            can_rewrite=can_rewrite,
-            max_tokens=max_tokens,
-        )
+async def test_mcp_connection():
+    """Test connection to MCP server."""
+    server_url = "http://127.0.0.1:8000/sse"
     
-    return tool
-
-
-# Register each context as a separate tool
-make_tool(
-    context_key="slack",
-    max_tokens=1000,
-    description="Proofread text for Slack communication. Optimized for casual, brief messages with appropriate tone for workplace chat.",
-)
-make_tool(
-    context_key="email",
-    max_tokens=2000,
-    description="Proofread text for email communication. Checks grammar, tone, clarity, and professional formatting suitable for email correspondence.",
-)
-make_tool(
-    context_key="general",
-    max_tokens=2000,
-    description="Proofread general text for any purpose. Provides comprehensive grammar, spelling, style, and clarity improvements.",
-)
+    print(f"Connecting to MCP server at {server_url}...")
+    
+    try:
+        # Connect using SSE transport
+        async with sse_client(server_url) as (read_stream, write_stream):
+            print("✓ SSE connection established")
+            
+            # Create client session
+            async with ClientSession(read_stream, write_stream) as session:
+                print("✓ Client session created")
+                
+                # Initialize the session
+                result = await session.initialize()
+                print(f"✓ Session initialized: {result}")
+                
+                # List available tools
+                tools_result = await session.list_tools()
+                print(f"\n✓ Found {len(tools_result.tools)} tools:")
+                for tool in tools_result.tools:
+                    print(f"  - {tool.name}: {tool.description}")
+                
+                # Test calling a tool
+                print("\n--- Testing proofread_slack tool ---")
+                test_text = "this is a test mesage with some typos"
+                print(f"Input: '{test_text}'")
+                
+                result = await session.call_tool(
+                    "proofread_slack",
+                    arguments={
+                        "text": test_text,
+                        "instructions": "",
+                        "can_rewrite": False
+                    }
+                )
+                
+                print(f"\nResult type: {type(result)}")
+                print(f"Result: {result}")
+                
+                if result.content and len(result.content) > 0:
+                    proofread_text = result.content[0].text
+                    print(f"\n✓ Proofread result: '{proofread_text}'")
+                else:
+                    print("✗ No content in result")
+                
+                print("\n✓ All tests passed!")
+                
+    except Exception as e:
+        print(f"\n✗ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def main():
-    try:
-        get_oci_client()
-        print("✓ OCI OpenAI client initialized successfully")
-    except Exception as e:
-        print(f"✗ Failed to initialize OCI client: {e}")
-        sys.exit(1)
-    
-    mcp.run(
-        transport=settings.server.transport,
-        host=settings.server.host,
-        port=settings.server.port,
-    )
+    """Run the test."""
+    print("=== MCP Server Test ===\n")
+    asyncio.run(test_mcp_connection())
 
 
 if __name__ == "__main__":
