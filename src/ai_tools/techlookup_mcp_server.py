@@ -5,21 +5,23 @@ Tech Lookup MCP Server: Exposes tools to look up Linux/macOS commands and explai
 import sys
 from typing import Optional, Callable, Annotated, List
 from fastmcp import FastMCP
-from ai_tools.oci_client import OciOpenAI, OCIUserPrincipleAuth
+from ai_tools.oci_openai_helper import OCIOpenAIHelper
 from ai_tools.utils.config import get_settings
+from envyaml import EnvYAML
 
 settings = get_settings()
 mcp = FastMCP("techlookup-server")
-_oci_client: Optional[OciOpenAI] = None
+_oci_client = None
 
 
-def get_oci_client() -> OciOpenAI:
+def get_oci_client():
     global _oci_client
     if _oci_client is None:
-        _oci_client = OciOpenAI(
-            service_endpoint=settings.oci.service_endpoint,
-            auth=OCIUserPrincipleAuth(profile_name=settings.oci.profile_name),
-            compartment_id=settings.oci.compartment_id,
+        # Load config with EnvYAML for the helper
+        config = EnvYAML("config.yaml")
+        _oci_client = OCIOpenAIHelper.get_client(
+            model_name=settings.oci.default_model,
+            config=config,
         )
     return _oci_client
 
@@ -28,13 +30,13 @@ def llm_ask(prompt: str, max_tokens: int = 512, model: Optional[str] = None) -> 
     try:
         client = get_oci_client()
         model_name = model if model else settings.oci.default_model
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[{"role": "user", "content": prompt}],
+        messages = [{"role": "user", "content": prompt}]
+        response = client.invoke(
+            messages,
             max_tokens=max_tokens,
             temperature=0.2,
         )
-        return response.choices[0].message.content.strip()
+        return response.content.strip()
     except Exception as e:
         return f"Error: {str(e)}"
 

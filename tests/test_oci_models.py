@@ -2,15 +2,21 @@ import sys
 import os
 import time
 
-from src.ai_tools.oci_client import OciOpenAI, OCIUserPrincipleAuth
+from src.ai_tools.oci_openai_helper import OCIOpenAIHelper
 
 
 class ModelIterator:
     def __init__(self, service_endpoint, compartment_id, profile_name="API-USER"):
-        self.client = OciOpenAI(
-            service_endpoint=service_endpoint,
-            auth=OCIUserPrincipleAuth(profile_name=profile_name),
-            compartment_id=compartment_id,
+        # Create a mock config dict for the helper
+        config = {
+            'oci': {
+                'profile': profile_name,
+                'compartment': compartment_id
+            }
+        }
+        self.client = OCIOpenAIHelper.get_client(
+            model_name="xai.grok-4-fast-non-reasoning",  # default model
+            config=config,
         )
         self.models = self._parse_models()
 
@@ -31,20 +37,16 @@ class ModelIterator:
             print(f"Testing model {model}...")
             try:
                 start_time = time.time()
-                response = self.client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": "what can you do better than any other llm in one sentence",
-                        }
-                    ],
-                    # max_tokens=100,
-                    # max_completion_tokens=100
-                )
+                messages = [
+                    {
+                        "role": "user",
+                        "content": "what can you do better than any other llm in one sentence",
+                    }
+                ]
+                response = self.client.invoke(messages)
                 end_time = time.time()
                 elapsed_time = end_time - start_time
-                answer = response.choices[0].message.content
+                answer = response.content
                 results.append((elapsed_time, model, answer))
             except Exception as e:
                 errors.append((model, str(e)))

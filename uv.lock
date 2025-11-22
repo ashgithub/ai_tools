@@ -7,11 +7,13 @@ name = "ai-tools"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "envyaml" },
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "langchain-openai" },
     { name = "oci" },
+    { name = "oci-openai" },
     { name = "openai" },
     { name = "pydantic" },
     { name = "pydantic-settings", extra = ["yaml"] },
@@ -35,12 +37,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "envyaml", specifier = ">=1.10.211231" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "fastmcp", specifier = ">=0.9.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain-openai", specifier = ">=1.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "oci", specifier = ">=2.161.1" },
+    { name = "oci-openai", specifier = ">=0.1.0" },
     { name = "openai", specifier = ">=2.6.0" },
     { name = "pydantic", specifier = ">=2.12.3" },
     { name = "pydantic-settings", extras = ["yaml"], specifier = ">=2.0.0" },
@@ -387,6 +391,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f5/22/900cb125c76b7aaa450ce02fd727f452243f2e91a61af068b40adba60ea9/email_validator-2.3.0.tar.gz", hash = "sha256:9fc05c37f2f6cf439ff414f8fc46d917929974a82244c20eb10231ba60c54426", size = 51238, upload-time = "2025-08-26T13:09:06.831Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/de/15/545e2b6cf2e3be84bc1ed85613edd75b8aea69807a71c26f4ca6a9258e82/email_validator-2.3.0-py3-none-any.whl", hash = "sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4", size = 35604, upload-time = "2025-08-26T13:09:05.858Z" },
+]
+
+[[package]]
+name = "envyaml"
+version = "1.10.211231"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/aa/ce/bcc062f1d55368713674cf55851a4d9dfa77835c0258753d0f23dff70743/envyaml-1.10.211231.tar.gz", hash = "sha256:88f8a076159e3c317d3450a5f404132b6ac91aecee4934ea72eac65f911f1244", size = 7591, upload-time = "2022-01-08T10:56:40.01Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/67/99/6612dcf7d494223041c029cc4fa325cb513fe99bf989e6895a1de357f1eb/envyaml-1.10.211231-py2.py3-none-any.whl", hash = "sha256:8d7a7a6be12587cc5da32a587067506b47b849f4643981099ad148015a72de52", size = 8138, upload-time = "2022-01-08T10:56:38.849Z" },
 ]
 
 [[package]]
@@ -971,6 +987,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/81/71/43169e5f9b1a63a355ec31281466688bf24d717eecc5fed234c1fba2a51d/oci-2.161.1.tar.gz", hash = "sha256:e040ef83ad9497351fe9f49a22f22fe8ffcae18abb7685f080a7444a98f6e680", size = 15883954, upload-time = "2025-10-21T17:28:11.631Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ea/75/0b197c319b1d20b03f521b7421823ed981b6e893cc10f5d4784e051b0cbb/oci-2.161.1-py3-none-any.whl", hash = "sha256:13dd9aea3f58fc2952309ac6067853b114d9eb61ebdfad3c43d443cef82b45ed", size = 32356655, upload-time = "2025-10-21T17:28:04.847Z" },
+]
+
+[[package]]
+name = "oci-openai"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "oci" },
+    { name = "openai" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/24/ef3141542813298e680aed0e80ffd55614f56bf13b88f53a8c2d07193d3b/oci_openai-1.0.0.tar.gz", hash = "sha256:328836457b0c14306083ea865be2397ee1e0e0a846fe296b0be9c552361546df", size = 320738, upload-time = "2025-11-19T01:18:45.937Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/11/ec00267495b6db64fded696a0d9838c25363fcd8f38947a4812fe94c112a/oci_openai-1.0.0-py3-none-any.whl", hash = "sha256:7fc3b464c7f995b789729755e117a3d0cf911118a0a4f7d313fa57c1bd5f9853", size = 8929, upload-time = "2025-11-19T01:18:44.5Z" },
 ]
 
 [[package]]

@@ -7,22 +7,24 @@ with configurable LLM, prompt, and rewrite settings.
 import sys
 from typing import Optional, Callable, Annotated
 from fastmcp import FastMCP
-from ai_tools.oci_client import OciOpenAI, OCIUserPrincipleAuth
+from ai_tools.oci_openai_helper import OCIOpenAIHelper
 from ai_tools.utils.config import get_settings
 from ai_tools.utils.prompts import build_proofread_prompt
+from envyaml import EnvYAML
 
 settings = get_settings()
 mcp = FastMCP("proofread-server")
-_oci_client: Optional[OciOpenAI] = None
+_oci_client = None
 
 
-def get_oci_client() -> OciOpenAI:
+def get_oci_client():
     global _oci_client
     if _oci_client is None:
-        _oci_client = OciOpenAI(
-            service_endpoint=settings.oci.service_endpoint,
-            auth=OCIUserPrincipleAuth(profile_name=settings.oci.profile_name),
-            compartment_id=settings.oci.compartment_id,
+        # Load config with EnvYAML for the helper
+        config = EnvYAML("config.yaml")
+        _oci_client = OCIOpenAIHelper.get_client(
+            model_name=settings.oci.default_model,
+            config=config,
         )
     return _oci_client
 
@@ -49,13 +51,14 @@ def do_proofread(
             can_rewrite=can_rewrite,
         )
         model_name = model if model is not None else settings.oci.default_model
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[{"role": "user", "content": prompt}],
+        # Use LangChain invoke method
+        messages = [{"role": "user", "content": prompt}]
+        response = client.invoke(
+            messages,
             max_tokens=max_tokens,
             temperature=0.3,
         )
-        return response.choices[0].message.content.strip()
+        return response.content.strip()
     except Exception as e:
         return f"Error proofreading ({context_key}) text: {str(e)}"
 

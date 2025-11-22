@@ -17,7 +17,8 @@ import os
 from pathlib import Path                                                                                                                                                                                                                                  
 from typing import List, Tuple                                                                                                                                                                                                                            
                                                                                                                                                                                                                                                           
-from ai_tools.oci_client import OciOpenAI, OCIUserPrincipleAuth                                                                                                                                                                                           
+from ai_tools.oci_openai_helper import OCIOpenAIHelper
+from envyaml import EnvYAML
 from ai_tools.utils.config import get_settings                                                                                                                                                                                                            
                                                                                                                                                                                                                                                           
 settings = get_settings()                                                                                                                                                                                                                                 
@@ -88,25 +89,23 @@ def parse_models(file_path: Path) -> List[str]:
     return models                                                                                                                                                                                                                                         
                                                                                                                                                                                                                                                           
                                                                                                                                                                                                                                                           
-def query_model(client: OciOpenAI, model: str) -> Tuple[float, str]:                                                                                                                                                                                      
-    """Send the test prompt to *model* and return (elapsed_seconds, answer)."""                                                                                                                                                                           
-    start = time.perf_counter()                                                                                                                                                                                                                           
-    response = client.chat.completions.create(                                                                                                                                                                                                            
-        model=model,                                                                                                                                                                                                                                      
-        messages=[{"role": "user", "content": settings.testing.test_prompt}],                                                                                                                                                                             
-    )                                                                                                                                                                                                                                                     
-    elapsed = time.perf_counter() - start                                                                                                                                                                                                                 
-    answer = response.choices[0].message.content                                                                                                                                                                                                          
-    return elapsed, answer                                                                                                                                                                                                                                
+def query_model(client, model: str) -> Tuple[float, str]:
+    """Send the test prompt to *model* and return (elapsed_seconds, answer)."""
+    start = time.perf_counter()
+    messages = [{"role": "user", "content": settings.testing.test_prompt}]
+    response = client.invoke(messages)
+    elapsed = time.perf_counter() - start
+    answer = response.content
+    return elapsed, answer
                                                                                                                                                                                                                                                           
                                                                                                                                                                                                                                                           
-def main() -> int:                                                                                                                                                                                                                                        
-    try:                                                                                                                                                                                                                                                  
-        client = OciOpenAI(                                                                                                                                                                                                                               
-            service_endpoint=settings.oci.service_endpoint,                                                                                                                                                                                               
-            auth=OCIUserPrincipleAuth(profile_name=settings.oci.profile_name),                                                                                                                                                                            
-            compartment_id=settings.oci.compartment_id,                                                                                                                                                                                                   
-        )                                                                                                                                                                                                                                                 
+def main() -> int:
+    try:
+        config = EnvYAML("config.yaml")
+        client = OCIOpenAIHelper.get_client(
+            model_name=settings.oci.default_model,
+            config=config,
+        )
                                                                                                                                                                                                                                                           
         model_list_path = get_model_list_path()                                                                                                                                                                                                           
         models = parse_models(model_list_path)                                                                                                                                                                                                            
@@ -170,5 +169,4 @@ def main() -> int:
                                                                                                                                                                                                                                                           
                                                                                                                                                                                                                                                           
 if __name__ == "__main__":                                                                                                                                                                                                                                
-    sys.exit(main())                                                                                                                                                                                                                                      
-                              
+    sys.exit(main())

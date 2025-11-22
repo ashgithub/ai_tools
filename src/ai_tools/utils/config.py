@@ -32,13 +32,13 @@ class OCI(BaseModel, extra="forbid"):
     service_endpoint: str = Field(
         default="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com"
     )
-    compartment_id: str = Field(
+    compartment: str = Field(
         default=(
             "ocid1.compartment.oc1..aaaaaaaac3cxhzoka75zaaysugzmvhm3ni3keqvikawjxvwp"
             "z26mud622owa"
         )
     )
-    profile_name: str = Field(default="API-USER")
+    profile: str = Field(default="API-USER")
     default_model: str = Field(default="xai.grok-4-fast-non-reasoning")
 
 
@@ -72,7 +72,7 @@ class Prompts(BaseModel, extra="forbid"):
 
 class Testing(BaseModel, extra="forbid"):
     models_file: str = Field(default="docs/llm_models.md")
-    results_dir: str = Field(default="results")
+    results_dir: str = Field(default="output/benchmarks")
     test_prompt: str = Field(
         default="what can you do better than any other llm in one sentence"
     )
