@@ -31,6 +31,7 @@ hello-world = "examples.hello_world:main"
 benchmark-models = "examples.benchmark_models:main"
 mcp-tester = "clients.mcp_tester:main"
 proofread-gui = "clients.proofread_gui:main"
+multi-tool-client = "clients.multi_tool_client:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_tools", "examples", "clients"]
