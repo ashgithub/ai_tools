@@ -239,7 +239,7 @@ class SimplifiedTextToolsGUI:
 
         self.context_var = tk.StringVar(value="general")
 
-        self.allow_rewrite_var = tk.BooleanVar(value=True)
+        self.allow_rewrite_var = tk.BooleanVar(value=False)
 
         def on_context_change(*args):
             chosen = self.context_var.get()
