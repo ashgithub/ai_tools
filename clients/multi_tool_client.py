@@ -156,6 +156,8 @@ class SimplifiedTextToolsGUI:
             widget = self.input_widgets[active_tab]
             widget.delete("1.0", tk.END)
             widget.insert("1.0", self.args.text)
+            # Auto-submit the action for the tab
+            self._run_action_for_tab(active_tab)
 
     def _create_tab(self, tab_name: str, config: dict):
         """Create a tab with input, prompt, and response areas."""
