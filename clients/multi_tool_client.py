@@ -54,24 +54,12 @@ class SimplifiedTextToolsGUI:
         return parser.parse_args()
 
     def _load_available_models(self) -> List[str]:
-        """Load available LLM models from docs/llm_models.md."""
-        models_file = os.path.join(os.path.dirname(__file__), '..', 'docs', 'llm_models.md')
-        models = []
+        """Load available LLM models from config."""
+        settings = get_settings()
+        models = settings.models if settings.models else []
 
-        try:
-            with open(models_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith('- '):
-                        # Extract model name from format: "- model.name – description"
-                        parts = line[2:].split(' – ', 1)
-                        if len(parts) >= 1:
-                            model_part = parts[0].strip()
-                            if model_part:
-                                models.append(model_part)
-        except FileNotFoundError:
-            # Fallback to default model if file not found
-            settings = get_settings()
+        if not models:
+            # Fallback to default model
             models = [settings.oci.default_model]
 
         return models

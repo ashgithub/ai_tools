@@ -14,7 +14,7 @@ all modules share one in-memory Settings instance.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import os
 import yaml
@@ -42,24 +42,6 @@ class OCI(BaseModel, extra="forbid"):
     default_model: str = Field(default="xai.grok-4-fast-non-reasoning")
 
 
-class Server(BaseModel, extra="forbid"):
-    host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8000)
-    transport: str = Field(default="sse")
-
-
-class MCPServer(BaseModel, extra="forbid"):
-    """Configuration for a single MCP server instance."""
-    host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8000)
-    transport: str = Field(default="sse")
-
-
-class Servers(BaseModel, extra="forbid"):
-    """Grouping of all MCP servers (proofread, techtool, summarization, ...)."""
-    proofread: MCPServer = MCPServer(port=8000)
-    techtool: MCPServer = MCPServer(port=8001)
-    summarization: MCPServer = MCPServer(port=8002)
 
 
 class Prompts(BaseModel, extra="forbid"):
@@ -96,7 +78,7 @@ class Settings(BaseSettings):
     )
 
     oci: OCI = OCI()
-    servers: "Servers" = Servers()  # type: ignore[name-defined]
+    models: List[str] = Field(default_factory=list)
     prompts: Prompts = Prompts()
     testing: Testing = Testing()
     logging: Logging = Logging()
@@ -142,9 +124,6 @@ def get_settings() -> Settings:
 
 __all__ = [
     "OCI",
-    "MCPServer",
-    "Servers",
-    "Server",
     "Prompts",
     "Testing",
     "Logging",

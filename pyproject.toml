@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-tools"
 version = "0.1.0"
-description = "MCP Server for proofreading text using LLM models"
+description = "AI Tools for text processing using LLMs"
 readme = "docs/README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,18 +18,12 @@ dependencies = [
     "pydantic-settings[yaml]>=2.0.0",
     "pyyaml>=6.0.0",
     "envyaml>=1.10.211231",
-    "fastmcp>=0.9.0",
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.32.0",
     "pytest>=7.0.0",
 ]
 
 [project.scripts]
-proofread-server = "ai_tools.proofread_mcp_server:main"
-techlookup-server = "ai_tools.techlookup_mcp_server:main"
 hello-world = "examples.hello_world:main"
 benchmark-models = "examples.benchmark_models:main"
-mcp-tester = "clients.mcp_tester:main"
 proofread-gui = "clients.proofread_gui:main"
 multi-tool-client = "clients.multi_tool_client:main"
 

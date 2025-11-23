@@ -8,20 +8,35 @@ oci:
   profile: "API-USER"
   default_model: "xai.grok-4-fast-non-reasoning"
 
-# Server Configuration
-servers:
-  proofread:
-    host: "0.0.0.0"
-    port: 8000
-    transport: "sse"
-  techtool:
-    host: "0.0.0.0"
-    port: 8001
-    transport: "sse"
-  summarization:
-    host: "0.0.0.0"
-    port: 8002
-    transport: "sse"
+# Available LLM Models
+models:
+  - "meta.llama-3.1-405b-instruct"
+  - "meta.llama-3.2-90b-vision-instruct"
+  - "meta.llama-3.3-70b-instruct"
+  - "meta.llama-4-maverick-17b-128e-instruct-fp8"
+  - "meta.llama-4-scout-17b-16e-instruct"
+  - "openai.gpt-4.1"
+  - "openai.gpt-4.1-mini"
+  - "openai.gpt-4.1-nano"
+  - "openai.gpt-4o"
+  - "openai.gpt-4o-mini"
+  - "openai.gpt-4o-mini-search-preview"
+  - "openai.gpt-4o-search-preview"
+  - "openai.gpt-5"
+  - "openai.gpt-5-mini"
+  - "openai.gpt-5-nano"
+  - "openai.o1"
+  - "openai.o3"
+  - "openai.o3-mini"
+  - "openai.o4-mini"
+  - "xai.grok-3"
+  - "xai.grok-3-fast"
+  - "xai.grok-3-mini"
+  - "xai.grok-3-mini-fast"
+  - "xai.grok-4"
+  - "xai.grok-4-fast-non-reasoning"
+  - "xai.grok-4-fast-reasoning"
+  - "xai.grok-code-fast-1"
 
 # Prompts
 prompts:
@@ -49,14 +64,3 @@ prompts:
     slack: "Slack message - keep it concise, friendly, and professional. Use appropriate emojis if they fit naturally."
     email: "Email message - maintain professional tone, proper grammar, and clear structure. Include appropriate greeting/closing if applicable."
     general: "General text - improve clarity, grammar, and readability while maintaining the original intent."
-
-# Model Testing
-testing:
-  models_file: "docs/llm_models.md"
-  results_dir: "output/benchmarks"
-  test_prompt: "what can you do better than any other llm in one sentence"
-
-# Logging Configuration
-logging:
-  level: "DEBUG"
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
