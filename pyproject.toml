@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "ai-tools"
 version = "0.1.0"
 description = "AI Tools for text processing using LLMs"
-readme = "docs/README.md"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.28.1",
@@ -22,10 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-hello-world = "examples.hello_world:main"
-benchmark-models = "examples.benchmark_models:main"
-proofread-gui = "clients.proofread_gui:main"
-multi-tool-client = "clients.multi_tool_client:main"
+ai_tool = "clients.multi_tool_client:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_tools", "examples", "clients"]
