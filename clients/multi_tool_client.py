@@ -13,6 +13,7 @@ import time
 from typing import Optional
 from ai_tools.oci_openai_helper import OCIOpenAIHelper
 from ai_tools.utils.config import get_settings
+from ai_tools.utils.prompts import build_proofread_prompt
 from envyaml import EnvYAML
 
 logging.basicConfig(
@@ -203,6 +204,8 @@ class SimplifiedTextToolsGUI:
 
         self.context_var = tk.StringVar(value="general")
 
+        self.allow_rewrite_var = tk.BooleanVar(value=True)
+
         def on_context_change(*args):
             chosen = self.context_var.get()
             self.prompt_widgets["Proofread"].delete("1.0", tk.END)
@@ -221,14 +224,10 @@ class SimplifiedTextToolsGUI:
                 radio_frame, text=context.capitalize(), variable=self.context_var, value=context
             ).pack(side=tk.LEFT, padx=10)
 
-        # Separator
-        ttk.Separator(context_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=8)
-
-        # Options section
-        self.allow_rewrite_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            context_frame, text="Allow rewriting", variable=self.allow_rewrite_var
-        ).pack(anchor=tk.W, padx=(20, 0))
+            radio_frame, text="Allow rewriting", variable=self.allow_rewrite_var
+        ).pack(side=tk.LEFT, padx=10)
+
 
     def _create_model_selector(self):
         """Create the model selector dropdown."""
@@ -293,6 +292,14 @@ class SimplifiedTextToolsGUI:
         if tab_name == "Commands":
             os_selected = self.os_var.get() if hasattr(self, 'os_var') else 'macos'
             prompt = f"{template} for {os_selected} operating system.\n\n{section_label}:\n{input_text}"
+        elif tab_name == "Proofread":
+            context_key = self.context_var.get()
+            prompt = build_proofread_prompt(
+                text=input_text,
+                context_key=context_key,
+                instructions="",
+                can_rewrite=self.allow_rewrite_var.get()
+            )
         else:
             prompt = f"{template}\n\n{section_label}:\n{input_text}"
         self._run_action(tab_name, prompt, config)
