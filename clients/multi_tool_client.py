@@ -30,7 +30,6 @@ class SimplifiedTextToolsGUI:
         "Proofread": {
             "input_label": "Text to Proofread:",
             "sample_text": "i had s agreat tuime when i met yuo\n- lest meet again \n- yi choose trh palce\n0 you chsoe teh tm",
-            "default_prompt": "You are a professional proofreader. Your task is to improve the following text.",
             "prompt_section_label": "Text",
             "button_text": "Proofread",
             "config_frame": "_create_context_frame",
@@ -40,7 +39,6 @@ class SimplifiedTextToolsGUI:
         "Explain": {
             "input_label": "Technical Text to Explain:",
             "sample_text": "SSH keys are cryptographic key pairs used for secure authentication to remote systems. The public key is placed on the server, while the private key remains on the client machine.",
-            "default_prompt": "Explain the following content in an easy to understand paragraph for a general audience:",
             "prompt_section_label": "Content",
             "button_text": "Explain",
             "config_frame": None,
@@ -50,7 +48,6 @@ class SimplifiedTextToolsGUI:
         "Commands": {
             "input_label": "Task Description:",
             "sample_text": "copy my SSH public key to clipboard",
-            "default_prompt": "List 1 to 3 alternative command-line commands to accomplish the given task (no explanation, no comments).",
             "prompt_section_label": "Task",
             "button_text": "Get Commands",
             "config_frame": "_create_os_frame",
@@ -60,7 +57,6 @@ class SimplifiedTextToolsGUI:
         "Q&A": {
             "input_label": "Question:",
             "sample_text": "What is the capital of France?",
-            "default_prompt": "Answer the following question as accurately and concisely as possible:",
             "prompt_section_label": "Question",
             "button_text": "Ask",
             "config_frame": None,
@@ -91,6 +87,8 @@ class SimplifiedTextToolsGUI:
         self.args = self._parse_args()
         self.config = EnvYAML("config.yaml")
         self.app_mappings = self.config.get('app_mappings', {})
+        self.tab_prompts = self.config.get('tab_prompts', {})
+        self.context_defaults = self.tab_prompts.get('Proofread', {}).get('contexts', {})
         self._setup_ui()
 
     def _parse_args(self):
@@ -179,7 +177,10 @@ class SimplifiedTextToolsGUI:
         self.response_widgets[tab_name] = response_text
 
         prompt_text = scrolledtext.ScrolledText(sub_notebook, height=8, wrap=tk.WORD)
-        prompt_text.insert("1.0", config["default_prompt"])
+        if tab_name == "Proofread":
+            prompt_text.insert("1.0", self.context_defaults.get('general', ""))
+        else:
+            prompt_text.insert("1.0", self.tab_prompts.get(tab_name, ""))
         sub_notebook.add(prompt_text, text="Prompt")
         self.prompt_widgets[tab_name] = prompt_text
 
@@ -231,11 +232,7 @@ class SimplifiedTextToolsGUI:
         context_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Context radio buttons
-        context_defaults = {
-            "general": "You are a professional proofreader. Your task is to improve the following text.",
-            "slack": "Proofread this as a Slack message: keep it concise, friendly, professional, and use relevant emojis if appropriate.",
-            "email": "Proofread this as a business email: ensure a professional tone, proper structure, greeting, and closing."
-        }
+        context_defaults = self.context_defaults
 
         self.context_var = tk.StringVar(value="general")
 
@@ -314,18 +311,13 @@ class SimplifiedTextToolsGUI:
     def _run_action_for_tab(self, tab_name: str):
         """Generic handler for all tab action buttons."""
         config = self.TAB_CONFIG[tab_name]
-        template = self.prompt_widgets[tab_name].get("1.0", tk.END).strip()
         input_text = self.input_widgets[tab_name].get("1.0", tk.END).strip()
 
         if not input_text:
             messagebox.showwarning("Input Required", f"Please enter {config['input_label'].lower()}")
             return
 
-        section_label = config.get("prompt_section_label", "Content")
-        if tab_name == "Commands":
-            os_selected = self.os_var.get() if hasattr(self, 'os_var') else 'macos'
-            prompt = f"{template} for {os_selected} operating system.\n\n{section_label}:\n{input_text}"
-        elif tab_name == "Proofread":
+        if tab_name == "Proofread":
             context_key = self.context_var.get()
             prompt = build_proofread_prompt(
                 text=input_text,
@@ -334,7 +326,12 @@ class SimplifiedTextToolsGUI:
                 can_rewrite=self.allow_rewrite_var.get()
             )
         else:
-            prompt = f"{template}\n\n{section_label}:\n{input_text}"
+            template = self.tab_prompts[tab_name]
+            if tab_name == "Commands":
+                os_selected = self.os_var.get() if hasattr(self, 'os_var') else 'macos'
+                prompt = template.format(input=input_text, os=os_selected)
+            else:
+                prompt = template.format(input=input_text)
         self._run_action(tab_name, prompt, config)
 
     def _run_action(self, tab_name: str, prompt: str, config: dict):

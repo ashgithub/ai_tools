@@ -45,11 +45,9 @@ class OCI(BaseModel, extra="forbid"):
 
 
 class Prompts(BaseModel, extra="forbid"):
-    base_proofread: str = Field(default="")
     rewrite_allowed: str = Field(default="")
     rewrite_forbidden: str = Field(default="")
     output_instruction: str = Field(default="")
-    contexts: Dict[str, str] = Field(default_factory=dict)
 
 
 class Testing(BaseModel, extra="forbid"):
@@ -80,6 +78,7 @@ class Settings(BaseSettings):
     oci: OCI = OCI()
     models: List[str] = Field(default_factory=list)
     prompts: Prompts = Prompts()
+    tab_prompts: Dict[str, Any] = Field(default_factory=dict)
     testing: Testing = Testing()
     logging: Logging = Logging()
 

@@ -44,18 +44,15 @@ def build_proofread_prompt(
         Fully formatted prompt ready for LLM chat completion.
     """
     settings = get_settings()
+    proofread_cfg = settings.tab_prompts['Proofread']
     prompts_cfg = settings.prompts
 
-    # Resolve context phrase
-    context = prompts_cfg.contexts[context_key]
+    # Resolve context prompt
+    context = proofread_cfg['contexts'][context_key]
+
+    prompt = f"{context}\n\nOriginal text: \"{text}\""
     if instructions:
-        context += f" Additional notes: {instructions}"
-    
-    prompt = prompts_cfg.base_proofread.format(
-        context=context,
-        text=text,
-        instructions=instructions,
-    )
+        prompt += f"\nAdditional notes: {instructions}"
 
     prompt += prompts_cfg.rewrite_allowed if can_rewrite else prompts_cfg.rewrite_forbidden
     prompt += prompts_cfg.output_instruction

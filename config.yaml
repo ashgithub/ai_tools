@@ -42,12 +42,6 @@ models:
 
 # Prompts
 prompts:
-  base_proofread: |
-    You are a professional proofreader. Your task is to improve the following text.
-
-    Context: {context}
-    Original text: "{text}"
-
   rewrite_allowed: |
     You CAN rewrite the text to improve clarity, structure, and effectiveness while maintaining the original meaning.
     Make it more professional, clear, and well-structured.
@@ -60,10 +54,16 @@ prompts:
     Return only the corrected/proofread text, nothing else.
     Do not include quotes around the result unless they are part of the text.
 
-  contexts:
-    slack: "Slack message - keep it concise, friendly, and professional. Use appropriate emojis if they fit naturally."
-    email: "Email message - maintain professional tone, proper grammar, and clear structure. Include appropriate greeting/closing if applicable."
-    general: "General text - improve clarity, grammar, and readability while maintaining the original intent."
+# Tab-specific Prompts
+tab_prompts:
+  Proofread:
+    contexts:
+      general: "You are a professional proofreader. Your task is to improve the following text."
+      slack: "Proofread this as a Slack message: keep it concise, friendly, professional, and use relevant emojis if appropriate."
+      email: "Proofread this as a business email: ensure a professional tone, proper structure, greeting, and closing."
+  Explain: "Explain the following content in an easy to understand paragraph for a general audience:\n\nContent:\n{input}"
+  Commands: "List 1 to 3 alternative command-line commands to accomplish the given task (no explanation, no comments). for {os} operating system.\n\nTask:\n{input}"
+  Q&A: "Answer the following question as accurately and concisely as possible:\n\nQuestion:\n{input}"
 
 # Logging Configuration
 logging:
