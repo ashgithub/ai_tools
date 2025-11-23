@@ -4,6 +4,7 @@
 # OCI Configuration
 oci:
   service_endpoint: "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com"
+  base_url: "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1"
   compartment: "ocid1.compartment.oc1..aaaaaaaac3cxhzoka75zaaysugzmvhm3ni3keqvikawjxvwpz26mud622owa"
   profile: "API-USER"
   default_model: "xai.grok-4-fast-non-reasoning"
@@ -64,6 +65,45 @@ tab_prompts:
   Explain: "Explain the following content in an easy to understand paragraph for a general audience:\n\nContent:\n{input}"
   Commands: "List 1 to 3 alternative command-line commands to accomplish the given task (no explanation, no comments). for {os} operating system.\n\nTask:\n{input}"
   Q&A: "Answer the following question as accurately and concisely as possible:\n\nQuestion:\n{input}"
+
+# Tab Configurations
+tabs:
+  Proofread:
+    input_label: "Text to Proofread:"
+    sample_text: "i had s agreat tuime when i met yuo\n- lest meet again \n- yi choose trh palce\n0 you chsoe teh tm"
+    prompt_section_label: "Text"
+    button_text: "Proofread"
+    config_frame: "_create_context_frame"
+    max_tokens: 1000
+    temperature: 0.3
+  Explain:
+    input_label: "Technical Text to Explain:"
+    sample_text: "SSH keys are cryptographic key pairs used for secure authentication to remote systems. The public key is placed on the server, while the private key remains on the client machine."
+    prompt_section_label: "Content"
+    button_text: "Explain"
+    config_frame: null
+    max_tokens: 400
+    temperature: 0.2
+  Commands:
+    input_label: "Task Description:"
+    sample_text: "copy my SSH public key to clipboard"
+    prompt_section_label: "Task"
+    button_text: "Get Commands"
+    config_frame: "_create_os_frame"
+    max_tokens: 256
+    temperature: 0.2
+  Q&A:
+    input_label: "Question:"
+    sample_text: "What is the capital of France?"
+    prompt_section_label: "Question"
+    button_text: "Ask"
+    config_frame: null
+    max_tokens: 1000
+    temperature: 0.7
+
+# Commands Configuration
+commands:
+  os_options: ["macos", "linux"]
 
 # Logging Configuration
 logging:

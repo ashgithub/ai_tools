@@ -20,8 +20,8 @@ class OCIOpenAIHelper:
             ChatOpenAI: Initialized with OCI config, model name and base_url
         """
 
-        # OCI-compatible base URL—hardcoded per requirements
-        base_url = "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1"
+        # OCI-compatible base URL from config
+        base_url = config['oci']['base_url']
 
         client = ChatOpenAI(
             model=model_name,
@@ -118,4 +118,3 @@ if __name__ == "__main__":
         llm = OCIOpenAIHelper.get_client(model_name="openai.gpt-5", config=load_config(SANDBOX_CONFIG_FILE),use_responses_api=True)
         ai_async_msg = await  llm.ainvoke(test_messages)
         print("Async output:", ai_async_msg)
-

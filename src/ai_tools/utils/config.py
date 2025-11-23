@@ -32,6 +32,9 @@ class OCI(BaseModel, extra="forbid"):
     service_endpoint: str = Field(
         default="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com"
     )
+    base_url: str = Field(
+        default="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1"
+    )
     compartment: str = Field(
         default=(
             "ocid1.compartment.oc1..aaaaaaaac3cxhzoka75zaaysugzmvhm3ni3keqvikawjxvwp"
@@ -58,6 +61,10 @@ class Testing(BaseModel, extra="forbid"):
     )
 
 
+class Commands(BaseModel, extra="forbid"):
+    os_options: List[str] = Field(default_factory=lambda: ["macos", "linux"])
+
+
 class Logging(BaseModel, extra="forbid"):
     level: str = Field(default="INFO")
     format: str = Field(default="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -79,6 +86,9 @@ class Settings(BaseSettings):
     models: List[str] = Field(default_factory=list)
     prompts: Prompts = Prompts()
     tab_prompts: Dict[str, Any] = Field(default_factory=dict)
+    tabs: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    commands: Commands = Commands()
+    app_mappings: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     testing: Testing = Testing()
     logging: Logging = Logging()
 
@@ -124,6 +134,7 @@ def get_settings() -> Settings:
 __all__ = [
     "OCI",
     "Prompts",
+    "Commands",
     "Testing",
     "Logging",
     "Settings",

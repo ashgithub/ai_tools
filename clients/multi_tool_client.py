@@ -10,11 +10,10 @@ import threading
 import sys
 import logging
 import time
-from typing import Optional
+from typing import Optional, Any
 from ai_tools.oci_openai_helper import OCIOpenAIHelper
 from ai_tools.utils.config import get_settings
-from ai_tools.utils.prompts import build_proofread_prompt
-from envyaml import EnvYAML
+from ai_tools.utils.prompts import build_tab_prompt
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,45 +25,6 @@ logger = logging.getLogger(__name__)
 class SimplifiedTextToolsGUI:
     """Clean, simplified GUI for AI text tools."""
 
-    TAB_CONFIG = {
-        "Proofread": {
-            "input_label": "Text to Proofread:",
-            "sample_text": "i had s agreat tuime when i met yuo\n- lest meet again \n- yi choose trh palce\n0 you chsoe teh tm",
-            "prompt_section_label": "Text",
-            "button_text": "Proofread",
-            "config_frame": "_create_context_frame",
-            "max_tokens": 1000,
-            "temperature": 0.3,
-        },
-        "Explain": {
-            "input_label": "Technical Text to Explain:",
-            "sample_text": "SSH keys are cryptographic key pairs used for secure authentication to remote systems. The public key is placed on the server, while the private key remains on the client machine.",
-            "prompt_section_label": "Content",
-            "button_text": "Explain",
-            "config_frame": None,
-            "max_tokens": 400,
-            "temperature": 0.2,
-        },
-        "Commands": {
-            "input_label": "Task Description:",
-            "sample_text": "copy my SSH public key to clipboard",
-            "prompt_section_label": "Task",
-            "button_text": "Get Commands",
-            "config_frame": "_create_os_frame",
-            "max_tokens": 256,
-            "temperature": 0.2,
-        },
-        "Q&A": {
-            "input_label": "Question:",
-            "sample_text": "What is the capital of France?",
-            "prompt_section_label": "Question",
-            "button_text": "Ask",
-            "config_frame": None,
-            "max_tokens": 1000,
-            "temperature": 0.7,
-        }
-    }
-
     def __init__(self, root):
         self.root = root
         self.root.title("AI Text Tools")
@@ -72,7 +32,7 @@ class SimplifiedTextToolsGUI:
         self.root.minsize(800, 700)
         self.root.resizable(True, True)
 
-        self._oci_client: Optional[OCIOpenAIHelper] = None
+        self._oci_client: Optional[Any] = None
         self.selected_model: Optional[str] = None
         self.available_models = self._load_available_models()
         self.last_result: Optional[str] = None
@@ -85,9 +45,11 @@ class SimplifiedTextToolsGUI:
         self.sub_notebook_selections = {}
 
         self.args = self._parse_args()
-        self.config = EnvYAML("config.yaml")
-        self.app_mappings = self.config.get('app_mappings', {})
-        self.tab_prompts = self.config.get('tab_prompts', {})
+        self.settings = get_settings()
+        self.app_mappings = self.settings.app_mappings
+        self.tab_prompts = self.settings.tab_prompts
+        self.tabs_config = self.settings.tabs
+        self.os_options = self.settings.commands.os_options
         self.context_defaults = self.tab_prompts.get('Proofread', {}).get('contexts', {})
         self._setup_ui()
 
@@ -120,7 +82,7 @@ class SimplifiedTextToolsGUI:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
 
-        for tab_name, config in self.TAB_CONFIG.items():
+        for tab_name, config in self.tabs_config.items():
             self._create_tab(tab_name, config)
 
         self.notebook.bind("<<NotebookTabChanged>>", self._on_main_tab_changed)
@@ -138,7 +100,7 @@ class SimplifiedTextToolsGUI:
             tab_name = mapping['tab']
         else:
             tab_name = 'Q&A'
-        tab_index = list(self.TAB_CONFIG.keys()).index(tab_name)
+        tab_index = list(self.tabs_config.keys()).index(tab_name)
         self.notebook.select(tab_index)
 
         # Set tab-specific configs
@@ -219,8 +181,8 @@ class SimplifiedTextToolsGUI:
         os_frame.pack(fill=tk.X, pady=(0, 10))
 
         ttk.Label(os_frame, text="Operating System:").pack(side=tk.LEFT, padx=(0, 5))
-        self.os_var = tk.StringVar(value="macos")
-        for os_name in ["macos", "linux"]:
+        self.os_var = tk.StringVar(value=self.os_options[0])
+        for os_name in self.os_options:
             ttk.Radiobutton(os_frame, text=os_name.capitalize(), variable=self.os_var, value=os_name).pack(
                 side=tk.LEFT, padx=10
             )
@@ -287,19 +249,7 @@ class SimplifiedTextToolsGUI:
             self._oci_client = None
             self.status_var.set(f"Model: {selected_model}")
 
-    def _refresh_models(self):
-        """Refresh the list of available models."""
-        old_model = self.model_var.get()
-        self.available_models = self._load_available_models()
-        self.model_combo['values'] = self.available_models
 
-        if old_model in self.available_models:
-            self.model_var.set(old_model)
-        elif self.available_models:
-            self.model_var.set(self.available_models[0])
-            self._on_model_change()
-
-        self.status_var.set(f"Models refreshed: {len(self.available_models)} available")
 
     def _invoke_api(self, prompt: str, max_tokens: int, temperature: float) -> str:
         """Invoke the AI API and return the response."""
@@ -310,7 +260,7 @@ class SimplifiedTextToolsGUI:
 
     def _run_action_for_tab(self, tab_name: str):
         """Generic handler for all tab action buttons."""
-        config = self.TAB_CONFIG[tab_name]
+        config = self.tabs_config[tab_name]
         input_text = self.input_widgets[tab_name].get("1.0", tk.END).strip()
 
         if not input_text:
@@ -318,20 +268,20 @@ class SimplifiedTextToolsGUI:
             return
 
         if tab_name == "Proofread":
-            context_key = self.context_var.get()
-            prompt = build_proofread_prompt(
-                text=input_text,
-                context_key=context_key,
-                instructions="",
+            prompt = build_tab_prompt(
+                tab_name,
+                input_text,
+                context_key=self.context_var.get(),
                 can_rewrite=self.allow_rewrite_var.get()
             )
+        elif tab_name == "Commands":
+            prompt = build_tab_prompt(
+                tab_name,
+                input_text,
+                os=self.os_var.get() if hasattr(self, 'os_var') else self.os_options[0]
+            )
         else:
-            template = self.tab_prompts[tab_name]
-            if tab_name == "Commands":
-                os_selected = self.os_var.get() if hasattr(self, 'os_var') else 'macos'
-                prompt = template.format(input=input_text, os=os_selected)
-            else:
-                prompt = template.format(input=input_text)
+            prompt = build_tab_prompt(tab_name, input_text)
         self._run_action(tab_name, prompt, config)
 
     def _run_action(self, tab_name: str, prompt: str, config: dict):
@@ -401,10 +351,10 @@ class SimplifiedTextToolsGUI:
         self.root.quit()
         sys.exit(0)
 
-    def _get_oci_client(self) -> OCIOpenAIHelper:
+    def _get_oci_client(self) -> Any:
         """Get or create OCI client."""
         if self._oci_client is None:
-            config = EnvYAML("config.yaml")
+            config = self.settings.model_dump()
             self._oci_client = OCIOpenAIHelper.get_client(
                 model_name=self.model_var.get(),
                 config=config,

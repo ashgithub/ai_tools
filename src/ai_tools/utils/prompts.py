@@ -57,3 +57,38 @@ def build_proofread_prompt(
     prompt += prompts_cfg.rewrite_allowed if can_rewrite else prompts_cfg.rewrite_forbidden
     prompt += prompts_cfg.output_instruction
     return prompt
+
+
+def build_tab_prompt(tab_name: str, input_text: str, **kwargs) -> str:
+    """Build a prompt for a given tab.
+
+    Parameters
+    ----------
+    tab_name:
+        The name of the tab (e.g., 'Proofread', 'Explain').
+    input_text:
+        The user input text.
+    **kwargs:
+        Additional parameters like context_key, can_rewrite, os, etc.
+
+    Returns
+    -------
+    str
+        The formatted prompt.
+    """
+    settings = get_settings()
+
+    if tab_name == 'Proofread':
+        return build_proofread_prompt(
+            text=input_text,
+            context_key=kwargs.get('context_key', 'general'),
+            instructions=kwargs.get('instructions', ''),
+            can_rewrite=kwargs.get('can_rewrite', False)
+        )
+    else:
+        template = settings.tab_prompts.get(tab_name, '')
+        if tab_name == 'Commands':
+            os_selected = kwargs.get('os', 'macos')
+            return template.format(input=input_text, os=os_selected)
+        else:
+            return template.format(input=input_text)
