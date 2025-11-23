@@ -280,8 +280,6 @@ class SimplifiedTextToolsGUI:
         self.model_combo.pack(side=tk.LEFT, padx=(0, 10))
         self.model_combo.bind("<<ComboboxSelected>>", self._on_model_change)
 
-        ttk.Button(model_frame, text="🔄", width=3, command=self._refresh_models).pack(side=tk.LEFT)
-
     def _on_model_change(self, event=None):
         """Handle model selection change."""
         selected_model = self.model_var.get()

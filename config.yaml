@@ -48,8 +48,6 @@ prompts:
     Context: {context}
     Original text: "{text}"
 
-    Instructions: {instructions}
-
   rewrite_allowed: |
     You CAN rewrite the text to improve clarity, structure, and effectiveness while maintaining the original meaning.
     Make it more professional, clear, and well-structured.
@@ -76,13 +74,13 @@ logging:
 app_mappings:
   Proofread:
     - context: email
-      apps: [mail]
+      apps: [mail, outlook, thunderbird, gmail, applemail]
     - context: slack
-      apps: [slack]
+      apps: [slack, discord, teams, mattermost, zoom, skype, whatsapp]
   Explain:
-    - apps: [safari]
+    - apps: [safari, chrome, firefox, edge, opera, brave, arc, vivaldi]
   Commands:
     - os: macos
-      apps: [terminal]
+      apps: [terminal, iterm2, alacritty, hyper, warp, tabby, kitty, terminator]
   Q&A:
     - apps: []  # Default if no app or no match
