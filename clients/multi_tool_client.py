@@ -81,23 +81,165 @@ class SimplifiedTextToolsGUI:
         # Model selector at top
         self._create_model_selector()
 
+        # State tracking for sub-tab selection persistence
+        self._sub_notebook_map = {}
+        self._sub_notebook_selection = {}
+
         # Create notebook (tabs)
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
 
-        # Create tabs
-        self._create_proofread_tab()
-        self._create_explain_tab()
-        self._create_commands_tab()
-        self._create_question_tab()
+        # Tab configuration
+        tab_config = {
+            "Proofread": {
+                "input_label": "Text to Proofread:",
+                "sample_text": "i had s agreat tuime when i met yuo\n- lest meet again \n- yi choose trh palce\n0 you chsoe teh tm",
+                "default_prompt": "You are a professional proofreader. Your task is to improve the following text.",
+                "action_handler": self._do_proofread_action,
+                "button_text": "Proofread",
+                "config_frame_func": self._create_context_frame,
+            },
+            "Explain": {
+                "input_label": "Technical Text to Explain:",
+                "sample_text": "SSH keys are cryptographic key pairs used for secure authentication to remote systems. The public key is placed on the server, while the private key remains on the client machine.",
+                "default_prompt": "Explain the following content in an easy to understand paragraph for a general audience:",
+                "action_handler": self._do_explain_action,
+                "button_text": "Explain",
+                "config_frame_func": None,
+            },
+            "Commands": {
+                "input_label": "Task Description:",
+                "sample_text": "copy my SSH public key to clipboard",
+                "default_prompt": "List 1 to 3 alternative command-line commands to accomplish the given task (no explanation, no comments).",
+                "action_handler": self._do_commands_action,
+                "button_text": "Get Commands",
+                "config_frame_func": self._create_os_frame,
+            },
+            "Q&A": {
+                "input_label": "Question:",
+                "sample_text": "What is the capital of France?",
+                "default_prompt": "Answer the following question as accurately and concisely as possible:",
+                "action_handler": self._do_question_action,
+                "button_text": "Ask",
+                "config_frame_func": None,
+            }
+        }
+
+        # Create tabs using configuration
+        for tab_name, config in tab_config.items():
+            extra_widgets = None
+            if tab_name == "Proofread":
+                self.allow_rewrite_var = tk.BooleanVar(value=True)
+                checkbutton = ttk.Checkbutton(text="Allow rewriting", variable=self.allow_rewrite_var)
+                extra_widgets = [checkbutton]
+            self._create_tab(
+                tab_name=tab_name,
+                input_label=config["input_label"],
+                sample_text=config["sample_text"],
+                default_prompt=config["default_prompt"],
+                action_handler=config["action_handler"],
+                button_text=config["button_text"],
+                config_frame_func=config["config_frame_func"],
+                extra_widgets=extra_widgets
+            )
+
+        # Hook up main tab change event
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_main_tab_changed)
 
         # Status bar at bottom
         self.status_var = tk.StringVar(value="Ready")
-        status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+        self.status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
-        # Prefill clipboard content if available
-        self._prefill_clipboard()
+    def _create_tab(self, tab_name: str, input_label: str, sample_text: str, default_prompt: str,
+                    action_handler, button_text: str, config_frame_func=None, extra_widgets=None):
+        """Create a generic tab with common UI components."""
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text=tab_name)
+
+        # Input text area
+        ttk.Label(frame, text=input_label).pack(anchor=tk.W, pady=(10, 0))
+        input_text = scrolledtext.ScrolledText(frame, height=8, wrap=tk.WORD)
+        input_text.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        input_text.insert("1.0", sample_text)
+
+        # Set attribute for input text based on tab_name
+        input_attr = f"{tab_name.lower().replace(' ', '_')}_input"
+        setattr(self, input_attr, input_text)
+
+        # Create Prompt/Response Notebook (not packed yet)
+        notebook = ttk.Notebook(frame)
+
+        # Prompt tab (editable)
+        prompt_text = scrolledtext.ScrolledText(notebook, height=8, wrap=tk.WORD)
+        prompt_text.insert("1.0", default_prompt)
+        notebook.add(prompt_text, text="Prompt")
+
+        # Response tab (read-only)
+        response_text = scrolledtext.ScrolledText(notebook, height=12, wrap=tk.WORD, state='disabled')
+        notebook.add(response_text, text="Response")
+        # Default to Response tab (index 1)
+        notebook.select(1)
+
+        # Set attributes for prompt and response text
+        prompt_attr = f"{tab_name.lower().replace(' ', '_')}_prompt_text"
+        response_attr = f"{tab_name.lower().replace(' ', '_')}_response_text"
+        setattr(self, prompt_attr, prompt_text)
+        setattr(self, response_attr, response_text)
+
+        # Optional config frame (e.g., context, OS) - after prompt_text is set, before packing notebook
+        if config_frame_func:
+            config_frame_func(frame)
+
+        # Pack notebook
+        notebook.pack(fill=tk.BOTH, expand=True, pady=(5, 10))
+
+        # Action frame
+        action_frame = ttk.Frame(frame)
+        action_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Action button
+        ttk.Button(action_frame, text=button_text, command=action_handler).pack(side=tk.LEFT, padx=(0, 10))
+
+        # Optional extra widgets (e.g., checkboxes)
+        if extra_widgets:
+            for widget in extra_widgets:
+                widget.pack(side=tk.LEFT, padx=10)
+
+        # Track in sub-notebook map
+        self._sub_notebook_map[tab_name] = notebook
+        self._sub_notebook_selection[tab_name] = 1
+        notebook.bind("<<NotebookTabChanged>>", lambda e: self._record_subtab(tab_name, notebook.index("current")))
+
+    def _create_os_frame(self, frame):
+        """Create OS selection frame for Commands tab."""
+        os_frame = ttk.Frame(frame)
+        os_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(os_frame, text="Operating System:").pack(side=tk.LEFT, padx=(0, 5))
+        self.os_var = tk.StringVar(value="macos")
+        ttk.Radiobutton(os_frame, text="macOS", variable=self.os_var, value="macos").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(os_frame, text="Linux", variable=self.os_var, value="linux").pack(side=tk.LEFT, padx=10)
+
+    def _create_context_frame(self, frame):
+        """Create context selection frame for Proofread tab."""
+        context_frame = ttk.LabelFrame(frame, text="Context", padding="5")
+        context_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.context_var = tk.StringVar(value="general")
+        def on_context_change(*args):
+            context_defaults = {
+                "general": "You are a professional proofreader. Your task is to improve the following text.",
+                "slack": "Proofread this as a Slack message: keep it concise, friendly, professional, and use relevant emojis if appropriate.",
+                "email": "Proofread this as a business email: ensure a professional tone, proper structure, greeting, and closing."
+            }
+            chosen = self.context_var.get()
+            self.proofread_prompt_text.delete("1.0", tk.END)
+            self.proofread_prompt_text.insert("1.0", context_defaults.get(chosen, context_defaults["general"]))
+        self.context_var.trace_add("write", on_context_change)
+        ttk.Radiobutton(context_frame, text="General", variable=self.context_var, value="general").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(context_frame, text="Slack", variable=self.context_var, value="slack").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(context_frame, text="Email", variable=self.context_var, value="email").pack(side=tk.LEFT, padx=10)
 
     def _create_model_selector(self):
         """Create the model selector dropdown at the top."""
@@ -163,14 +305,21 @@ class SimplifiedTextToolsGUI:
         # Response tab (read-only)
         self.proofread_response_text = scrolledtext.ScrolledText(pr_notebook, height=12, wrap=tk.WORD, state='disabled')
         pr_notebook.add(self.proofread_response_text, text="Response")
+        # Default to Response tab (index 1)
+        pr_notebook.select(1)
 
-        # Action buttons with allow_rewrite checkbox next to proofread button
+        # Action buttons with allow_rewrite checkbox
         action_frame = ttk.Frame(frame)
         action_frame.pack(fill=tk.X, pady=(0, 10))
 
         ttk.Button(action_frame, text="Proofread", command=self._do_proofread_action).pack(side=tk.LEFT, padx=(0, 10))
         self.allow_rewrite_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(action_frame, text="Allow rewriting", variable=self.allow_rewrite_var).pack(side=tk.LEFT)
+
+        # Track in sub-notebook map
+        self._sub_notebook_map["Proofread"] = pr_notebook
+        self._sub_notebook_selection["Proofread"] = 1
+        pr_notebook.bind("<<NotebookTabChanged>>", lambda e: self._record_subtab("Proofread", pr_notebook.index("current")))
 
     def _create_explain_tab(self):
         """Create the explain tab."""
@@ -198,9 +347,16 @@ class SimplifiedTextToolsGUI:
         # Response tab (read-only)
         self.explain_response_text = scrolledtext.ScrolledText(expl_notebook, height=12, wrap=tk.WORD, state='disabled')
         expl_notebook.add(self.explain_response_text, text="Response")
+        # Default to Response tab (index 1)
+        expl_notebook.select(1)
 
         # Action button
         ttk.Button(frame, text="Explain", command=self._do_explain_action).pack(anchor=tk.W, pady=(0, 10))
+
+        # Track in sub-notebook map
+        self._sub_notebook_map["Explain"] = expl_notebook
+        self._sub_notebook_selection["Explain"] = 1
+        expl_notebook.bind("<<NotebookTabChanged>>", lambda e: self._record_subtab("Explain", expl_notebook.index("current")))
 
     def _create_commands_tab(self):
         """Create the commands tab."""
@@ -237,9 +393,16 @@ class SimplifiedTextToolsGUI:
         # Response tab (read-only)
         self.commands_response_text = scrolledtext.ScrolledText(cmd_notebook, height=12, wrap=tk.WORD, state='disabled')
         cmd_notebook.add(self.commands_response_text, text="Response")
+        # Default to Response tab (index 1)
+        cmd_notebook.select(1)
 
         # Action button
         ttk.Button(frame, text="Get Commands", command=self._do_commands_action).pack(anchor=tk.W, pady=(0, 10))
+
+        # Track in sub-notebook map
+        self._sub_notebook_map["Commands"] = cmd_notebook
+        self._sub_notebook_selection["Commands"] = 1
+        cmd_notebook.bind("<<NotebookTabChanged>>", lambda e: self._record_subtab("Commands", cmd_notebook.index("current")))
 
     def _create_question_tab(self):
         """Create the question (Q&A) tab."""
@@ -267,9 +430,16 @@ class SimplifiedTextToolsGUI:
         # Response tab (read-only)
         self.question_response_text = scrolledtext.ScrolledText(qa_notebook, height=12, wrap=tk.WORD, state='disabled')
         qa_notebook.add(self.question_response_text, text="Response")
+        # Default to Response tab (index 1)
+        qa_notebook.select(1)
 
         # Action button
         ttk.Button(frame, text="Ask", command=self._do_question_action).pack(anchor=tk.W, pady=(0, 10))
+
+        # Track in sub-notebook map
+        self._sub_notebook_map["Q&A"] = qa_notebook
+        self._sub_notebook_selection["Q&A"] = 1
+        qa_notebook.bind("<<NotebookTabChanged>>", lambda e: self._record_subtab("Q&A", qa_notebook.index("current")))
 
     def _prefill_clipboard(self):
         """Prefill clipboard content into the current tab's input field."""
@@ -332,18 +502,22 @@ class SimplifiedTextToolsGUI:
                 self.root.clipboard_append(result)
                 self.status_var.set("Result copied to clipboard")
 
-    def _display_result(self, result: str):
+    def _display_result(self, result: str, current_tab):
         """Display result in the current tab's result text area."""
-        current_tab = self.notebook.tab(self.notebook.select(), "text")
         widget = None
+        sub_notebook = None
         if current_tab == "Proofread":
             widget = self.proofread_response_text
+            sub_notebook = self._sub_notebook_map.get("Proofread")
         elif current_tab == "Explain":
             widget = self.explain_response_text
+            sub_notebook = self._sub_notebook_map.get("Explain")
         elif current_tab == "Commands":
             widget = self.commands_response_text
+            sub_notebook = self._sub_notebook_map.get("Commands")
         elif current_tab == "Q&A":
             widget = self.question_response_text
+            sub_notebook = self._sub_notebook_map.get("Q&A")
 
         if widget is not None:
             widget.config(state='normal')
@@ -352,17 +526,10 @@ class SimplifiedTextToolsGUI:
             widget.config(state='disabled')
         self.last_result = result
         self.status_var.set("Ready")
-
-    def _get_oci_client(self):
-        """Get or create OCI client."""
-        if self._oci_client is None:
-            settings = get_settings()
-            config = EnvYAML("config.yaml")
-            self._oci_client = OCIOpenAIHelper.get_client(
-                model_name=self.model_var.get(),
-                config=config,
-            )
-        return self._oci_client
+        # Always select Response sub-tab upon display
+        if sub_notebook:
+            sub_notebook.select(1)
+            self._sub_notebook_selection[current_tab] = 1
 
     def _do_proofread_action(self):
         """Handle proofread button click."""
@@ -375,19 +542,22 @@ class SimplifiedTextToolsGUI:
         # Build actual prompt from template and input text
         prompt = f"{template}\n\nText:\n{user_text}"
 
-        self.status_var.set("Processing...")
+        self.status_var.set("Processing request...")
 
         def worker():
+            start_time = time.time()
             try:
                 client = self._get_oci_client()
                 model_name = self.model_var.get()
                 messages = [{"role": "user", "content": prompt}]
                 response = client.invoke(messages, max_tokens=1000, temperature=0.3)
                 result = str(response.content).strip()
-                self.root.after(0, lambda: self._display_result(result))
+                processing_time = time.time() - start_time
+                self.root.after(0, lambda: self._display_result(result, "Proofread"))
+                self.root.after(0, lambda: self.status_var.set(f"Response ready ({processing_time:.2f}s)"))
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror("Error", f"Proofreading failed: {str(e)}"))
-                self.root.after(0, lambda: self.status_var.set("Error occurred"))
+                self.root.after(0, lambda: self.status_var.set(f"Error: {str(e)}"))
 
         thread = threading.Thread(target=worker)
         thread.daemon = True
@@ -404,19 +574,22 @@ class SimplifiedTextToolsGUI:
         # Build actual prompt
         prompt = f"{template}\n\nContent:\n{input_text}"
 
-        self.status_var.set("Processing...")
+        self.status_var.set("Processing request...")
 
         def worker():
+            start_time = time.time()
             try:
                 client = self._get_oci_client()
                 model_name = self.model_var.get()
                 messages = [{"role": "user", "content": prompt}]
                 response = client.invoke(messages, max_tokens=400, temperature=0.2)
                 result = str(response.content).strip()
-                self.root.after(0, lambda: self._display_result(result))
+                processing_time = time.time() - start_time
+                self.root.after(0, lambda: self._display_result(result, "Explain"))
+                self.root.after(0, lambda: self.status_var.set(f"Response ready ({processing_time:.2f}s)"))
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror("Error", f"Explanation failed: {str(e)}"))
-                self.root.after(0, lambda: self.status_var.set("Error occurred"))
+                self.root.after(0, lambda: self.status_var.set(f"Error: {str(e)}"))
 
         thread = threading.Thread(target=worker)
         thread.daemon = True
@@ -433,9 +606,10 @@ class SimplifiedTextToolsGUI:
         # Build actual prompt
         prompt = f"{template}\n\nTask:\n{input_desc}\n"
 
-        self.status_var.set("Processing...")
+        self.status_var.set("Processing request...")
 
         def worker():
+            start_time = time.time()
             try:
                 client = self._get_oci_client()
                 model_name = self.model_var.get()
@@ -453,10 +627,12 @@ class SimplifiedTextToolsGUI:
                     if line:
                         lines.append(line)
                 final_result = '\n'.join(lines) if lines else result
-                self.root.after(0, lambda: self._display_result(final_result))
+                processing_time = time.time() - start_time
+                self.root.after(0, lambda: self._display_result(final_result, "Commands"))
+                self.root.after(0, lambda: self.status_var.set(f"Response ready ({processing_time:.2f}s)"))
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror("Error", f"Command generation failed: {str(e)}"))
-                self.root.after(0, lambda: self.status_var.set("Error occurred"))
+                self.root.after(0, lambda: self.status_var.set(f"Error: {str(e)}"))
 
         thread = threading.Thread(target=worker)
         thread.daemon = True
@@ -473,158 +649,50 @@ class SimplifiedTextToolsGUI:
         # Build actual prompt from template and input
         prompt = f"{template}\n\nQuestion:\n{question_text}"
 
-        self.status_var.set("Processing...")
+        self.status_var.set("Processing request...")
 
         def worker():
+            start_time = time.time()
             try:
                 client = self._get_oci_client()
                 model_name = self.model_var.get()
                 messages = [{"role": "user", "content": prompt}]
                 response = client.invoke(messages, max_tokens=1000, temperature=0.7)
                 result = str(response.content).strip()
-                self.root.after(0, lambda: self._display_result(result))
+                processing_time = time.time() - start_time
+                self.root.after(0, lambda: self._display_result(result, "Q&A"))
+                self.root.after(0, lambda: self.status_var.set(f"Response ready ({processing_time:.2f}s)"))
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror("Error", f"Question answering failed: {str(e)}"))
-                self.root.after(0, lambda: self.status_var.set("Error occurred"))
+                self.root.after(0, lambda: self.status_var.set(f"Error: {str(e)}"))
 
         thread = threading.Thread(target=worker)
         thread.daemon = True
         thread.start()
 
-    # Legacy prompt template toggling/collapsing code has been REMOVED as prompt edit/display is now handled in per-tab notebooks.
+    def _on_main_tab_changed(self, event):
+        """Sync sub-notebook selection on main tab change."""
+        notebook = event.widget
+        tab_text = notebook.tab(notebook.select(), "text")
+        sub_notebook = self._sub_notebook_map.get(tab_text)
+        if sub_notebook:
+            index = self._sub_notebook_selection.get(tab_text, 1)
+            sub_notebook.select(index)
 
-    def _process_proofread(self, values):
-        """Process proofreading request."""
-        start_time = time.time()
-        try:
-            client = self._get_oci_client()
-            model_name = self.model_var.get()
-            prompt = build_proofread_prompt(
-                text=values['input_text'],
-                context_key=values['context'],
-                instructions="",
-                can_rewrite=values['allow_rewrite'],
+    def _record_subtab(self, tab_text, idx):
+        """Record last selected sub-tab for tab."""
+        self._sub_notebook_selection[tab_text] = idx
+
+    def _get_oci_client(self):
+        """Get or create OCI client."""
+        if self._oci_client is None:
+            settings = get_settings()
+            config = EnvYAML("config.yaml")
+            self._oci_client = OCIOpenAIHelper.get_client(
+                model_name=self.model_var.get(),
+                config=config,
             )
-
-            # INFO level logging
-            logger.info(f"LLM: {model_name}")
-            logger.info(f"Prompt: {prompt[:200]}..." if len(prompt) > 200 else f"Prompt: {prompt}")
-
-            messages = [{"role": "user", "content": prompt}]
-            response = client.invoke(messages, max_tokens=1000, temperature=0.3)
-            result = str(response.content).strip()
-
-            logger.info(f"Response: {result[:200]}..." if len(result) > 200 else f"Response: {result}")
-
-            processing_time = time.time() - start_time
-            result_with_timing = f"{result}\n\n--- Processing Time: {processing_time:.2f} seconds ---"
-            self.root.after(0, lambda: self._display_result(result_with_timing))
-
-        except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Proofreading failed: {str(e)}"))
-            self.root.after(0, lambda: self.status_var.set("Error occurred"))
-
-    def _process_explain(self, values):
-        """Process explain request."""
-        start_time = time.time()
-        try:
-            client = self._get_oci_client()
-            model_name = self.model_var.get()
-            prompt = (
-                "Explain the following technical content in an easy to understand paragraph, "
-                "for a general audience with some computer experience but not an expert.\n\n"
-                f"Content:\n{values['input_text']}\n"
-            )
-
-            # INFO level logging
-            logger.info(f"LLM: {model_name}")
-            logger.info(f"Prompt: {prompt[:200]}..." if len(prompt) > 200 else f"Prompt: {prompt}")
-
-            messages = [{"role": "user", "content": prompt}]
-            response = client.invoke(messages, max_tokens=400, temperature=0.2)
-            result = str(response.content).strip()
-
-            logger.info(f"Response: {result[:200]}..." if len(result) > 200 else f"Response: {result}")
-
-            processing_time = time.time() - start_time
-            result_with_timing = f"{result}\n\n--- Processing Time: {processing_time:.2f} seconds ---"
-            self.root.after(0, lambda: self._display_result(result_with_timing))
-
-        except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Explanation failed: {str(e)}"))
-            self.root.after(0, lambda: self.status_var.set("Error occurred"))
-
-    def _process_commands(self, values):
-        """Process commands request."""
-        start_time = time.time()
-        try:
-            client = self._get_oci_client()
-            model_name = self.model_var.get()
-            os_str = values['os'].lower()
-            if os_str not in ("linux", "macos"):
-                os_str = "macos"
-
-            prompt = (
-                f"List 1 to 3 alternative command-line commands to accomplish the following task on {os_str}:\n"
-                f"Task: {values['input_text']}\n"
-                "For each alternative, return only the shell command (no explanation, no comments). List as bullet points."
-            )
-
-            # INFO level logging
-            logger.info(f"LLM: {model_name}")
-            logger.info(f"Prompt: {prompt[:200]}..." if len(prompt) > 200 else f"Prompt: {prompt}")
-
-            messages = [{"role": "user", "content": prompt}]
-            response = client.invoke(messages, max_tokens=256, temperature=0.2)
-            result = str(response.content).strip()
-
-            logger.info(f"Response: {result[:200]}..." if len(result) > 200 else f"Response: {result}")
-
-            # Clean up bullet points
-            lines = []
-            for line in result.splitlines():
-                line = line.strip()
-                if line.startswith('- '):
-                    line = line[2:]
-                elif line and line[0] in '123' and len(line) > 1 and line[1] in '.)':
-                    line = line[2:].strip()
-                if line:
-                    lines.append(line)
-
-            result = '\n'.join(lines) if lines else result
-
-            processing_time = time.time() - start_time
-            result_with_timing = f"{result}\n\n--- Processing Time: {processing_time:.2f} seconds ---"
-            self.root.after(0, lambda: self._display_result(result_with_timing))
-
-        except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Command generation failed: {str(e)}"))
-            self.root.after(0, lambda: self.status_var.set("Error occurred"))
-
-    def _process_question(self, values):
-        """Process question request."""
-        start_time = time.time()
-        try:
-            client = self._get_oci_client()
-            model_name = self.model_var.get()
-
-            # INFO level logging
-            logger.info(f"LLM: {model_name}")
-            logger.info(f"Prompt: {values['input_text'][:200]}..." if len(values['input_text']) > 200 else f"Prompt: {values['input_text']}")
-
-            messages = [{"role": "user", "content": values['input_text']}]
-            response = client.invoke(messages, max_tokens=1000, temperature=0.7)
-            result = str(response.content).strip()
-
-            logger.info(f"Response: {result[:200]}..." if len(result) > 200 else f"Response: {result}")
-
-            processing_time = time.time() - start_time
-            result_with_timing = f"{result}\n\n--- Processing Time: {processing_time:.2f} seconds ---"
-            self.root.after(0, lambda: self._display_result(result_with_timing))
-
-        except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Question answering failed: {str(e)}"))
-            self.root.after(0, lambda: self.status_var.set("Error occurred"))
+        return self._oci_client
 
 
 def main():
