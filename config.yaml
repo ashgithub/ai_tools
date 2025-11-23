@@ -29,6 +29,8 @@ models:
   - "openai.o3"
   - "openai.o3-mini"
   - "openai.o4-mini"
+  - "openai.gpt-oss-20b"
+  - "openai.gpt-oss-120b"
   - "xai.grok-3"
   - "xai.grok-3-fast"
   - "xai.grok-3-mini"
@@ -68,3 +70,19 @@ prompts:
 # Logging Configuration
 logging:
   level: "DEBUG"
+
+# App to Tab Mappings
+# Tab-oriented mappings with list of apps per config
+app_mappings:
+  Proofread:
+    - context: email
+      apps: [mail]
+    - context: slack
+      apps: [slack]
+  Explain:
+    - apps: [safari]
+  Commands:
+    - os: macos
+      apps: [terminal]
+  Q&A:
+    - apps: []  # Default if no app or no match

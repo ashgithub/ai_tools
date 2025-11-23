@@ -89,15 +89,25 @@ class SimplifiedTextToolsGUI:
         self.sub_notebook_selections = {}
 
         self.args = self._parse_args()
+        self.config = EnvYAML("config.yaml")
+        self.app_mappings = self.config.get('app_mappings', {})
         self._setup_ui()
 
     def _parse_args(self):
         """Parse command line arguments."""
         import argparse
         parser = argparse.ArgumentParser(description='AI Text Tools GUI')
-        parser.add_argument('--app', help='Active application name')
-        parser.add_argument('--clipboard', help='Clipboard content')
+        parser.add_argument('--app', help='Application context to select the appropriate tab based on config.yaml mappings')
+        parser.add_argument('--text', help='Text content to pre-populate in the selected tab\'s input field')
         return parser.parse_args()
+
+    def _get_mapping_for_app(self, app):
+        """Get tab and config for a given app from mappings."""
+        for tab, configs in self.app_mappings.items():
+            for config in configs:
+                if app in config.get('apps', []):
+                    return {'tab': tab, 'config': config}
+        return None
 
     def _load_available_models(self) -> list:
         """Load available LLM models from config."""
@@ -123,6 +133,29 @@ class SimplifiedTextToolsGUI:
             self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W
         )
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
+        # Handle CLI args for tab selection and text population
+        mapping = self._get_mapping_for_app(self.args.app) if self.args.app else None
+        if mapping:
+            tab_name = mapping['tab']
+        else:
+            tab_name = 'Q&A'
+        tab_index = list(self.TAB_CONFIG.keys()).index(tab_name)
+        self.notebook.select(tab_index)
+
+        # Set tab-specific configs
+        config = mapping['config'] if mapping else {}
+        if tab_name == 'Proofread' and 'context' in config:
+            self.context_var.set(config['context'])
+        elif tab_name == 'Commands' and 'os' in config:
+            self.os_var.set(config['os'])
+
+        # Populate text if provided
+        if self.args.text:
+            active_tab = self.notebook.tab(self.notebook.select(), "text")
+            widget = self.input_widgets[active_tab]
+            widget.delete("1.0", tk.END)
+            widget.insert("1.0", self.args.text)
 
     def _create_tab(self, tab_name: str, config: dict):
         """Create a tab with input, prompt, and response areas."""
