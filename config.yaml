@@ -55,3 +55,8 @@ testing:
   models_file: "docs/llm_models.md"
   results_dir: "output/benchmarks"
   test_prompt: "what can you do better than any other llm in one sentence"
+
+# Logging Configuration
+logging:
+  level: "DEBUG"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

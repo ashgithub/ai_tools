@@ -78,6 +78,11 @@ class Testing(BaseModel, extra="forbid"):
     )
 
 
+class Logging(BaseModel, extra="forbid"):
+    level: str = Field(default="INFO")
+    format: str = Field(default="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+
 # --------------------------------------------------------------------------- #
 # 2. Aggregate Settings model
 # --------------------------------------------------------------------------- #
@@ -94,6 +99,7 @@ class Settings(BaseSettings):
     servers: "Servers" = Servers()  # type: ignore[name-defined]
     prompts: Prompts = Prompts()
     testing: Testing = Testing()
+    logging: Logging = Logging()
 
 
 # --------------------------------------------------------------------------- #
@@ -141,6 +147,7 @@ __all__ = [
     "Server",
     "Prompts",
     "Testing",
+    "Logging",
     "Settings",
     "get_settings",
 ]
