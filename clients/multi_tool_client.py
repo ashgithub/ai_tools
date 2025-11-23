@@ -32,7 +32,9 @@ class SimplifiedTextToolsGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("AI Text Tools")
-        self.root.geometry("700x600")
+        self.root.geometry("900x800")
+        self.root.minsize(800, 700)
+        self.root.resizable(True, True)
 
         self._oci_client = None
         self.selected_model = None

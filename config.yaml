@@ -64,3 +64,7 @@ prompts:
     slack: "Slack message - keep it concise, friendly, and professional. Use appropriate emojis if they fit naturally."
     email: "Email message - maintain professional tone, proper grammar, and clear structure. Include appropriate greeting/closing if applicable."
     general: "General text - improve clarity, grammar, and readability while maintaining the original intent."
+
+# Logging Configuration
+logging:
+  level: "DEBUG"
