@@ -45,6 +45,10 @@ class SimplifiedTextToolsGUI:
         self.sub_notebook_selections = {}
 
         self.args = self._parse_args()
+        # Read from stdin if --text not provided and stdin is not a tty
+        if self.args.text is None:
+            if not sys.stdin.isatty():
+                self.args.text = sys.stdin.read().strip()
         self.settings = get_settings()
         self.app_mappings = self.settings.app_mappings
         self.tab_prompts = self.settings.tab_prompts
