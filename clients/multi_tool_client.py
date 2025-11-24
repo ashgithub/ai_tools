@@ -286,21 +286,22 @@ class SimplifiedTextToolsGUI:
             messagebox.showwarning("Input Required", f"Please enter {config['input_label'].lower()}")
             return
 
+        # Get the current prompt template from the GUI widget
+        prompt_template = self.prompt_widgets[tab_name].get("1.0", tk.END).strip()
+
         if tab_name == "Proofread":
-            prompt = build_tab_prompt(
-                tab_name,
-                input_text,
-                context_key=self.context_var.get(),
-                can_rewrite=self.allow_rewrite_var.get()
-            )
-        elif tab_name == "Commands":
-            prompt = build_tab_prompt(
-                tab_name,
-                input_text,
-                os=self.os_var.get() if hasattr(self, 'os_var') else self.os_options[0]
-            )
+            prompt = f"{prompt_template}\n\nOriginal text: \"{input_text}\""
+            if self.allow_rewrite_var.get():
+                prompt += self.settings.prompts.rewrite_allowed
+            else:
+                prompt += self.settings.prompts.rewrite_forbidden
+            prompt += self.settings.prompts.output_instruction
         else:
-            prompt = build_tab_prompt(tab_name, input_text)
+            prompt = prompt_template.replace("{input}", input_text)
+            if tab_name == "Commands":
+                os_selected = self.os_var.get() if hasattr(self, 'os_var') else self.os_options[0]
+                prompt = prompt.replace("{os}", os_selected)
+
         self._run_action(tab_name, prompt, config)
 
     def _run_action(self, tab_name: str, prompt: str, config: dict):
