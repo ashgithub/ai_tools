@@ -36,6 +36,8 @@ class SimplifiedTextToolsGUI:
         self.selected_model: Optional[str] = None
         self.available_models = self._load_available_models()
         self.last_result: Optional[str] = None
+        self.current_text = ""
+        self.previous_tab = None
 
         # Map tab names to widgets
         self.input_widgets = {}
@@ -49,6 +51,7 @@ class SimplifiedTextToolsGUI:
         if self.args.text is None:
             if not sys.stdin.isatty():
                 self.args.text = sys.stdin.read().strip()
+        self.current_text = self.args.text or ""
         self.settings = get_settings()
         self.app_mappings = self.settings.app_mappings
         self.tab_prompts = self.settings.tab_prompts
@@ -110,6 +113,7 @@ class SimplifiedTextToolsGUI:
             tab_name = 'Q&A'
         tab_index = list(self.tabs_config.keys()).index(tab_name)
         self.notebook.select(tab_index)
+        self.previous_tab = tab_name
 
         # Set tab-specific configs
         config = mapping['config'] if mapping else {}
@@ -118,13 +122,15 @@ class SimplifiedTextToolsGUI:
         elif tab_name == 'Commands' and 'os' in config:
             self.os_var.set(config['os'])
 
-        # Populate text if provided
-        if self.args.text:
-            active_tab = self.notebook.tab(self.notebook.select(), "text")
-            widget = self.input_widgets[active_tab]
+        # Populate all tabs with current_text or sample text
+        for tab_name, widget in self.input_widgets.items():
             widget.delete("1.0", tk.END)
-            widget.insert("1.0", self.args.text)
-            # Auto-submit the action for the tab
+            initial_text = self.current_text if self.current_text else self.tabs_config[tab_name]["sample_text"]
+            widget.insert("1.0", initial_text)
+
+        # Auto-submit if text was provided
+        if self.current_text:
+            active_tab = self.notebook.tab(self.notebook.select(), "text")
             self._run_action_for_tab(active_tab)
 
     def _create_tab(self, tab_name: str, config: dict):
@@ -340,13 +346,30 @@ class SimplifiedTextToolsGUI:
         self.sub_notebook_selections[tab_name] = 0
 
     def _on_main_tab_changed(self, event):
-        """Restore sub-notebook selection on main tab change."""
+        """Sync text across tabs and restore sub-notebook selection."""
         notebook = event.widget
-        tab_text = notebook.tab(notebook.select(), "text")
-        sub_notebook = self.sub_notebooks.get(tab_text)
+        new_tab = notebook.tab(notebook.select(), "text")
+
+        # Update current_text from previous tab if it exists
+        if self.previous_tab and self.previous_tab != new_tab:
+            prev_widget = self.input_widgets.get(self.previous_tab)
+            if prev_widget:
+                self.current_text = prev_widget.get("1.0", tk.END).strip()
+
+        # Set the new tab's text to current_text
+        new_widget = self.input_widgets.get(new_tab)
+        if new_widget:
+            new_widget.delete("1.0", tk.END)
+            new_widget.insert("1.0", self.current_text)
+
+        # Restore sub-notebook selection
+        sub_notebook = self.sub_notebooks.get(new_tab)
         if sub_notebook:
-            index = self.sub_notebook_selections.get(tab_text, 0)
+            index = self.sub_notebook_selections.get(new_tab, 0)
             sub_notebook.select(index)
+
+        # Update previous_tab
+        self.previous_tab = new_tab
 
     def _done_action(self, tab_name: str):
         """Handle Done button: print response and exit."""

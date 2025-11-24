@@ -7,17 +7,16 @@ local scriptPath = dir .. "/clients/multi_tool_client.py"
 
 local terminal_config = {  -- Shared config for terminal-like apps (iTerm2, Code)
     copy = function()
-        -- Triple click to select the entire line
-        local pos = hs.mouse.absolutePosition()
-        hs.eventtap.leftClick(pos)
-        hs.timer.usleep(1000)
-        hs.eventtap.leftClick(pos)
-        hs.timer.usleep(1000)
-        hs.eventtap.leftClick(pos)
-        hs.timer.usleep(200000)
-
-        -- Copy selection
-        hs.eventtap.keyStroke({"cmd"}, "c")
+        -- Enter iTerm2 copy mode with Cmd+Shift+C
+        hs.eventtap.keyStroke({"cmd", "shift"}, "c")
+        hs.timer.usleep(100000)
+        
+        -- In copy mode, use Shift+V to select entire line
+        hs.eventtap.keyStroke({"shift"}, "v")
+        hs.timer.usleep(100000)
+        
+        -- Press y to yank (copy) selection to system clipboard and exit copy mode
+        hs.eventtap.keyStrokes("y")
         hs.timer.usleep(300000)
     end,
     paste = function()
