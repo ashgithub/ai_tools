@@ -38,6 +38,7 @@ class SimplifiedTextToolsGUI:
         self.last_result: Optional[str] = None
         self.current_text = ""
         self.previous_tab = None
+        self.selected_command = tk.StringVar()
 
         # Map tab names to widgets
         self.input_widgets = {}
@@ -148,9 +149,14 @@ class SimplifiedTextToolsGUI:
         # Prompt/Response notebook
         sub_notebook = ttk.Notebook(frame)
 
-        response_text = scrolledtext.ScrolledText(sub_notebook, height=12, wrap=tk.WORD, state='normal')
-        sub_notebook.add(response_text, text="Response")
-        self.response_widgets[tab_name] = response_text
+        if tab_name == "Commands":
+            response_frame = ttk.Frame(sub_notebook)
+            sub_notebook.add(response_frame, text="Response")
+            self.response_widgets[tab_name] = response_frame
+        else:
+            response_text = scrolledtext.ScrolledText(sub_notebook, height=12, wrap=tk.WORD, state='normal')
+            sub_notebook.add(response_text, text="Response")
+            self.response_widgets[tab_name] = response_text
 
         prompt_text = scrolledtext.ScrolledText(sub_notebook, height=8, wrap=tk.WORD)
         if tab_name == "Proofread":
@@ -336,11 +342,24 @@ class SimplifiedTextToolsGUI:
 
     def _display_result(self, tab_name: str, result: str):
         """Display result in the response area."""
-        widget = self.response_widgets[tab_name]
-        widget.config(state='normal')
-        widget.delete("1.0", tk.END)
-        widget.insert("1.0", result)
-        self.last_result = result
+        if tab_name == "Commands":
+            # Clear existing radio buttons
+            frame = self.response_widgets[tab_name]
+            for widget in frame.winfo_children():
+                widget.destroy()
+            # Create radio buttons for each command
+            self.selected_command = tk.StringVar()
+            commands = result.split('\n')
+            for command in commands:
+                if command.strip():
+                    ttk.Radiobutton(frame, text=command, variable=self.selected_command, value=command).pack(anchor=tk.W)
+            self.last_result = result
+        else:
+            widget = self.response_widgets[tab_name]
+            widget.config(state='normal')
+            widget.delete("1.0", tk.END)
+            widget.insert("1.0", result)
+            self.last_result = result
         # Switch to Response tab
         self.sub_notebooks[tab_name].select(0)
         self.sub_notebook_selections[tab_name] = 0
@@ -373,9 +392,14 @@ class SimplifiedTextToolsGUI:
 
     def _done_action(self, tab_name: str):
         """Handle Done button: print response and exit."""
-        result = self.response_widgets[tab_name].get("1.0", tk.END).strip()
-        if not result:
-           result="no result"
+        if tab_name == "Commands":
+            result = self.selected_command.get().strip()
+            if not result:
+                result = "no command selected"
+        else:
+            result = self.response_widgets[tab_name].get("1.0", tk.END).strip()
+            if not result:
+                result = "no result"
         print(result)
         self.root.quit()
         sys.exit(0)
