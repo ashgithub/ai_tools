@@ -5,6 +5,42 @@ local dir = os.getenv("HOME") .. "/work/code/python/ai_tools"
 local scriptPath = dir .. "/clients/multi_tool_client.py"
 -- local scriptMode = "-m proof"
 
+local terminal_config = {  -- Shared config for terminal-like apps (iTerm2, Code)
+    copy = function()
+        -- Triple click to select the entire line
+        local pos = hs.mouse.absolutePosition()
+        hs.eventtap.leftClick(pos)
+        hs.timer.usleep(1000)
+        hs.eventtap.leftClick(pos)
+        hs.timer.usleep(1000)
+        hs.eventtap.leftClick(pos)
+        hs.timer.usleep(200000)
+
+        -- Copy selection
+        hs.eventtap.keyStroke({"cmd"}, "c")
+        hs.timer.usleep(300000)
+    end,
+    paste = function()
+        -- Send Escape first to ensure you're in normal mode
+        hs.eventtap.keyStroke({}, "escape")
+        hs.timer.usleep(50000)
+        
+        -- Use vi command: go to start, delete to end, enter insert mode
+        hs.eventtap.keyStrokes("0d$i")
+        hs.timer.usleep(50000)
+        
+        -- Paste from clipboard
+        hs.eventtap.keyStroke({"cmd"}, "v")
+        hs.timer.usleep(200000)
+        hs.timer.usleep(200000)
+        hs.eventtap.keyStroke({"cmd"}, "return")
+        
+        -- Exit insert mode
+        --hs.eventtap.keyStroke({}, "escape")
+        --hs.timer.usleep(50000)
+    end
+}
+
 local app_configs = {
     ["Slack"] = {
         copy = function()
@@ -21,41 +57,8 @@ local app_configs = {
             hs.eventtap.keyStroke({"cmd"}, "return")
         end
     },
-    ["iTerm2"] = {  -- Customize vi commands for iTerm as needed
-        copy = function()
-            -- Triple click to select the entire line
-            local pos = hs.mouse.absolutePosition()
-            hs.eventtap.leftClick(pos)
-            hs.timer.usleep(5000)
-            hs.eventtap.leftClick(pos)
-            hs.timer.usleep(5000)
-            hs.eventtap.leftClick(pos)
-            hs.timer.usleep(200000)
-
-            -- Copy selection
-            hs.eventtap.keyStroke({"cmd"}, "c")
-            hs.timer.usleep(300000)
-        end,
-        paste = function()
-            -- Send Escape first to ensure you're in normal mode
-            hs.eventtap.keyStroke({}, "escape")
-            hs.timer.usleep(50000)
-            
-            -- Use vi command: go to start, delete to end, enter insert mode
-            hs.eventtap.keyStrokes("0d$i")
-            hs.timer.usleep(50000)
-            
-            -- Paste from clipboard
-            hs.eventtap.keyStroke({"cmd"}, "v")
-            hs.timer.usleep(200000)
-            hs.timer.usleep(200000)
-            hs.eventtap.keyStroke({"cmd"}, "return")
-            
-            -- Exit insert mode
-            --hs.eventtap.keyStroke({}, "escape")
-            --hs.timer.usleep(50000)
-        end
-    },
+    ["iTerm2"] = terminal_config,
+    ["Code"] = terminal_config,
     ["default"] = {
         copy = function()
             hs.eventtap.keyStroke({"cmd"}, "c")
