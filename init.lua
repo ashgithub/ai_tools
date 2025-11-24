@@ -63,10 +63,13 @@ function processAppText()
 
             hs.pasteboard.setContents(stdOut)
 
+            app:activate()
+            hs.timer.usleep(200000)
+
             if appName:match("Slack") then
                 hs.eventtap.keyStroke({ "cmd" }, "a")
                 hs.timer.usleep(200000)
-            end 
+            end
             hs.eventtap.keyStroke({ "cmd" }, "v")
             hs.timer.usleep(200000)
             if appName:match("Slack") then

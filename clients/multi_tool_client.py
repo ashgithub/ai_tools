@@ -142,7 +142,7 @@ class SimplifiedTextToolsGUI:
         # Prompt/Response notebook
         sub_notebook = ttk.Notebook(frame)
 
-        response_text = scrolledtext.ScrolledText(sub_notebook, height=12, wrap=tk.WORD, state='disabled')
+        response_text = scrolledtext.ScrolledText(sub_notebook, height=12, wrap=tk.WORD, state='normal')
         sub_notebook.add(response_text, text="Response")
         self.response_widgets[tab_name] = response_text
 
@@ -334,7 +334,6 @@ class SimplifiedTextToolsGUI:
         widget.config(state='normal')
         widget.delete("1.0", tk.END)
         widget.insert("1.0", result)
-        widget.config(state='disabled')
         self.last_result = result
         # Switch to Response tab
         self.sub_notebooks[tab_name].select(0)
