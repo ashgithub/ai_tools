@@ -123,11 +123,11 @@ class SimplifiedTextToolsGUI:
         elif tab_name == 'Commands' and 'os' in config:
             self.os_var.set(config['os'])
 
-        # Populate all tabs with current_text or sample text
+        # Populate all tabs with current_text if provided
         for tab_name, widget in self.input_widgets.items():
             widget.delete("1.0", tk.END)
-            initial_text = self.current_text if self.current_text else self.tabs_config[tab_name]["sample_text"]
-            widget.insert("1.0", initial_text)
+            if self.current_text:
+                widget.insert("1.0", self.current_text)
 
         # Auto-submit if text was provided
         if self.current_text:
@@ -143,7 +143,6 @@ class SimplifiedTextToolsGUI:
         ttk.Label(frame, text=config["input_label"]).pack(anchor=tk.W, pady=(10, 0))
         input_text = scrolledtext.ScrolledText(frame, height=8, wrap=tk.WORD)
         input_text.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        input_text.insert("1.0", config["sample_text"])
         self.input_widgets[tab_name] = input_text
 
         # Prompt/Response notebook

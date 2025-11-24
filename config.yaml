@@ -70,7 +70,6 @@ tab_prompts:
 tabs:
   Proofread:
     input_label: "Text to Proofread:"
-    sample_text: "i had s agreat tuime when i met yuo\n- lest meet again \n- yi choose trh palce\n0 you chsoe teh tm"
     prompt_section_label: "Text"
     button_text: "Proofread"
     config_frame: "_create_context_frame"
@@ -78,7 +77,6 @@ tabs:
     temperature: 0.3
   Explain:
     input_label: "Technical Text to Explain:"
-    sample_text: "SSH keys are cryptographic key pairs used for secure authentication to remote systems. The public key is placed on the server, while the private key remains on the client machine."
     prompt_section_label: "Content"
     button_text: "Explain"
     config_frame: null
@@ -86,7 +84,6 @@ tabs:
     temperature: 0.2
   Commands:
     input_label: "Task Description:"
-    sample_text: "copy my SSH public key to clipboard"
     prompt_section_label: "Task"
     button_text: "Get Commands"
     config_frame: "_create_os_frame"
@@ -94,7 +91,6 @@ tabs:
     temperature: 0.2
   Q&A:
     input_label: "Question:"
-    sample_text: "What is the capital of France?"
     prompt_section_label: "Question"
     button_text: "Ask"
     config_frame: null
