@@ -5,15 +5,74 @@ local dir = os.getenv("HOME") .. "/work/code/python/ai_tools"
 local scriptPath = dir .. "/clients/multi_tool_client.py"
 -- local scriptMode = "-m proof"
 
+local app_configs = {
+    ["Slack"] = {
+        copy = function()
+            hs.eventtap.keyStroke({"cmd"}, "a")
+            hs.timer.usleep(300000)
+            hs.eventtap.keyStroke({"cmd"}, "c")
+            hs.timer.usleep(300000)
+        end,
+        paste = function()
+            hs.eventtap.keyStroke({"cmd"}, "a")
+            hs.timer.usleep(200000)
+            hs.eventtap.keyStroke({"cmd"}, "v")
+            hs.timer.usleep(200000)
+            hs.eventtap.keyStroke({"cmd"}, "return")
+        end
+    },
+    ["iTerm2"] = {  -- Customize vi commands for iTerm as needed
+        copy = function()
+            -- Triple click to select the entire line
+            local pos = hs.mouse.absolutePosition()
+            hs.eventtap.leftClick(pos)
+            hs.timer.usleep(5000)
+            hs.eventtap.leftClick(pos)
+            hs.timer.usleep(5000)
+            hs.eventtap.leftClick(pos)
+            hs.timer.usleep(200000)
+
+            -- Copy selection
+            hs.eventtap.keyStroke({"cmd"}, "c")
+            hs.timer.usleep(300000)
+        end,
+        paste = function()
+            -- Send Escape first to ensure you're in normal mode
+            hs.eventtap.keyStroke({}, "escape")
+            hs.timer.usleep(50000)
+            
+            -- Use vi command: go to start, delete to end, enter insert mode
+            hs.eventtap.keyStrokes("0d$i")
+            hs.timer.usleep(50000)
+            
+            -- Paste from clipboard
+            hs.eventtap.keyStroke({"cmd"}, "v")
+            hs.timer.usleep(200000)
+            hs.timer.usleep(200000)
+            hs.eventtap.keyStroke({"cmd"}, "return")
+            
+            -- Exit insert mode
+            --hs.eventtap.keyStroke({}, "escape")
+            --hs.timer.usleep(50000)
+        end
+    },
+    ["default"] = {
+        copy = function()
+            hs.eventtap.keyStroke({"cmd"}, "c")
+            hs.timer.usleep(300000)
+        end,
+        paste = function()
+            hs.eventtap.keyStroke({"cmd"}, "v")
+            hs.timer.usleep(200000)
+        end
+    }
+}
+
 function processAppText()
     local app = hs.application.frontmostApplication()
     local appName = app and app:name() or ""
+    local config = app_configs[appName] or app_configs["default"]
     local scriptMode = "--app ".. "\"" .. appName .. "\""
-
---    if not (appName:match("Slack") or appName:match("Mail")) then
---        hs.alert.show("This hotkey only works in Slack or Mail.")
---        return
---    end
 
     hs.alert.show("Processing selected text from " .. appName .. "...")
 
@@ -21,12 +80,9 @@ function processAppText()
     local originalClipboard = hs.pasteboard.getContents()
 
     -- Copy selected text
-    if appName:match("Slack") then
-        hs.eventtap.keyStroke({ "cmd" }, "a")
-        hs.timer.usleep(300000)
-    end 
-    hs.eventtap.keyStroke({ "cmd" }, "c")
-    hs.timer.usleep(300000)
+    config.copy()
+    hs.alert.show("text copied from " .. appName .. "...")
+    hs.sound.getByName("Funk"):play()
 
     local text = hs.pasteboard.getContents()
     if not text or text == "" then
@@ -66,19 +122,9 @@ function processAppText()
             app:activate()
             hs.timer.usleep(200000)
 
-            if appName:match("Slack") then
-                hs.eventtap.keyStroke({ "cmd" }, "a")
-                hs.timer.usleep(200000)
-            end
-            hs.eventtap.keyStroke({ "cmd" }, "v")
-            hs.timer.usleep(200000)
-            if appName:match("Slack") then
-                hs.eventtap.keyStroke({ "cmd" }, "return")
-                hs.alert.show("Slack text processed!")
-            elseif appName:match("Mail") then
-                hs.alert.show("Mail text processed – result copied.")
-                hs.sound.getByName("Funk"):play()
-            end
+            config.paste()
+            hs.alert.show("text pasted from " .. appName .. "...")
+            hs.sound.getByName("Funk"):play()
 
             -- Restore clipboard
             hs.timer.doAfter(0.5, function()
