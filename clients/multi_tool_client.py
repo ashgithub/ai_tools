@@ -98,8 +98,12 @@ class SimplifiedTextToolsGUI:
         )
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
+        # if no text is passed cler out the app name
+        if len(self.args.text.strip()) == 0:
+            self.args.app = None 
+            
         # Handle CLI args for tab selection and text population
-        mapping = self._get_mapping_for_app(self.args.app) if self.args.app else None
+        mapping = self._get_mapping_for_app(self.args.app.lower()) if self.args.app else None
         if mapping:
             tab_name = mapping['tab']
         else:
@@ -349,8 +353,7 @@ class SimplifiedTextToolsGUI:
         """Handle Done button: print response and exit."""
         result = self.response_widgets[tab_name].get("1.0", tk.END).strip()
         if not result:
-            messagebox.showwarning("No Response", "No response available. Please run an action first.")
-            return
+           result="no result"
         print(result)
         self.root.quit()
         sys.exit(0)

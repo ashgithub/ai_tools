@@ -107,7 +107,7 @@ commands:
 
 # Logging Configuration
 logging:
-  level: "DEBUG"
+  level: "ERROR"
 
 # App to Tab Mappings
 # Tab-oriented mappings with list of apps per config
@@ -118,7 +118,7 @@ app_mappings:
     - context: slack
       apps: [slack, discord, teams, mattermost, zoom, skype, whatsapp]
   Explain:
-    - apps: [safari, chrome, firefox, edge, opera, brave, arc, vivaldi]
+    - apps: [safari, chrome, code, firefox, edge, opera, brave, arc, vivaldi]
   Commands:
     - os: macos
       apps: [terminal, iterm2, alacritty, hyper, warp, tabby, kitty, terminator]
