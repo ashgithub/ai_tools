@@ -33,9 +33,24 @@ prompts:
 # Tab-specific Prompts
 tab_prompts:
   Proofread:
+    allow_rewrite_default: true
+    template: |
+      {context}
+
+      [[REWRITE_ALLOWED]]
+      {rewrite_allowed}
+      [[/REWRITE_ALLOWED]]
+
+      [[REWRITE_FORBIDDEN]]
+      {rewrite_forbidden}
+      [[/REWRITE_FORBIDDEN]]
+
+      {output_instruction}
+
+      Original text: "{input}"
     contexts:
       general: "You are a professional proofreader. Your task is to improve the following text."
-      slack: "Proofread this as a Slack message: keep it concise, friendly, professional, use appropriate slack compatible markdown to make it more readable. correct any formatting errors to improve readability and compy with slack markdown."
+      slack: "Proofread this as a Slack message: keep it concise, friendly, professional, use appropriate slack compatible markdown to make it more readable. correct any formatting errors to improve readability. use slack compatible markdown *Bold*, _Italics_ (link)[http://url.com]. use lists & emojis to improve readibility"
       email: "Proofread this as a business email: ensure a professional tone, proper structure, greeting, and closing."
   Explain: "Explain the following content in an easy to understand paragraph for a general audience:\n\nContent:\n{input}"
   Commands: "List 1 to 3 alternative command-line commands to accomplish the given task (no explanation, no comments). for {os} operating system.\n\nTask:\n{input}"

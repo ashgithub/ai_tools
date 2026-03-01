@@ -18,6 +18,7 @@ from ai_tools.utils.model_cache import (
     get_cached_or_refreshed_models,
 )
 from ai_tools.utils.prompts import build_tab_prompt
+from ai_tools.utils.prompts import get_tab_template
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +50,9 @@ class SimplifiedTextToolsGUI:
         # Map tab names to widgets
         self.input_widgets = {}
         self.prompt_widgets = {}
+        self.resolved_prompt_widgets = {}
+        self.template_overrides = {}
+        self.active_template_keys = {}
         self.response_widgets = {}
         self.sub_notebooks = {}
         self.sub_notebook_selections = {}
@@ -62,7 +66,11 @@ class SimplifiedTextToolsGUI:
         self.tab_prompts = self.settings.tab_prompts
         self.tabs_config = self.settings.tabs
         self.os_options = self.settings.commands.os_options
-        self.context_defaults = self.tab_prompts.get('Proofread', {}).get('contexts', {})
+        proofread_cfg = self.tab_prompts.get('Proofread', {})
+        self.context_defaults = proofread_cfg.get('contexts', {})
+        self.proofread_allow_rewrite_default = bool(
+            proofread_cfg.get('allow_rewrite_default', False)
+        )
         self._setup_ui()
 
     def _parse_args(self):
@@ -173,6 +181,9 @@ class SimplifiedTextToolsGUI:
         elif tab_name == 'Commands' and 'os' in config:
             self.os_var.set(config['os'])
 
+        for loaded_tab_name in self.tabs_config.keys():
+            self._activate_template_for_state(loaded_tab_name, persist_current=False)
+
         # Populate all tabs with current_text if provided
         for tab_name, widget in self.input_widgets.items():
             widget.delete("1.0", tk.END)
@@ -195,7 +206,7 @@ class SimplifiedTextToolsGUI:
         input_text.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         self.input_widgets[tab_name] = input_text
 
-        # Prompt/Response notebook
+        # Response/Template/Resolved Prompt notebook
         sub_notebook = ttk.Notebook(frame)
 
         if tab_name == "Commands":
@@ -208,12 +219,15 @@ class SimplifiedTextToolsGUI:
             self.response_widgets[tab_name] = response_text
 
         prompt_text = scrolledtext.ScrolledText(sub_notebook, height=8, wrap=tk.WORD)
-        if tab_name == "Proofread":
-            prompt_text.insert("1.0", self.context_defaults.get('general', ""))
-        else:
-            prompt_text.insert("1.0", self.tab_prompts.get(tab_name, ""))
-        sub_notebook.add(prompt_text, text="Prompt")
+        prompt_text.insert("1.0", get_tab_template(tab_name))
+        sub_notebook.add(prompt_text, text="Template")
         self.prompt_widgets[tab_name] = prompt_text
+
+        resolved_prompt_text = scrolledtext.ScrolledText(
+            sub_notebook, height=8, wrap=tk.WORD, state='disabled'
+        )
+        sub_notebook.add(resolved_prompt_text, text="Resolved Prompt")
+        self.resolved_prompt_widgets[tab_name] = resolved_prompt_text
 
         sub_notebook.select(0)  # Default to Response tab
 
@@ -240,6 +254,12 @@ class SimplifiedTextToolsGUI:
             command=lambda: self._run_action_for_tab(tab_name)
         ).pack(side=tk.LEFT, padx=(0, 10))
 
+        ttk.Button(
+            action_frame,
+            text="Reset Template",
+            command=lambda: self._reset_template(tab_name),
+        ).pack(side=tk.LEFT, padx=(0, 10))
+
         ttk.Button(action_frame, text="Done", command=lambda: self._done_action(tab_name)).pack(
             side=tk.LEFT, padx=10
         )
@@ -252,7 +272,13 @@ class SimplifiedTextToolsGUI:
         ttk.Label(os_frame, text="Operating System:").pack(side=tk.LEFT, padx=(0, 5))
         self.os_var = tk.StringVar(value=self.os_options[0])
         for os_name in self.os_options:
-            ttk.Radiobutton(os_frame, text=os_name.capitalize(), variable=self.os_var, value=os_name).pack(
+            ttk.Radiobutton(
+                os_frame,
+                text=os_name.capitalize(),
+                variable=self.os_var,
+                value=os_name,
+                command=self._on_commands_os_change,
+            ).pack(
                 side=tk.LEFT, padx=10
             )
 
@@ -267,12 +293,10 @@ class SimplifiedTextToolsGUI:
 
         self.context_var = tk.StringVar(value="general")
 
-        self.allow_rewrite_var = tk.BooleanVar(value=False)
+        self.allow_rewrite_var = tk.BooleanVar(value=self.proofread_allow_rewrite_default)
 
         def on_context_change(*args):
-            chosen = self.context_var.get()
-            self.prompt_widgets["Proofread"].delete("1.0", tk.END)
-            self.prompt_widgets["Proofread"].insert("1.0", context_defaults[chosen])
+            self._on_proofread_options_change()
 
         self.context_var.trace_add("write", on_context_change)
 
@@ -288,7 +312,10 @@ class SimplifiedTextToolsGUI:
             ).pack(side=tk.LEFT, padx=10)
 
         ttk.Checkbutton(
-            radio_frame, text="Allow rewriting", variable=self.allow_rewrite_var
+            radio_frame,
+            text="Allow rewriting",
+            variable=self.allow_rewrite_var,
+            command=self._on_proofread_options_change,
         ).pack(side=tk.LEFT, padx=10)
 
 
@@ -326,6 +353,76 @@ class SimplifiedTextToolsGUI:
         response = client.invoke(messages, max_tokens=max_tokens, temperature=temperature)
         return str(response.content).strip()
 
+    def _render_resolved_prompt(self, tab_name: str, prompt: str):
+        """Render the resolved prompt in a read-only widget."""
+        widget = self.resolved_prompt_widgets[tab_name]
+        widget.config(state='normal')
+        widget.delete("1.0", tk.END)
+        widget.insert("1.0", prompt)
+        widget.config(state='disabled')
+
+    def _get_template_key(self, tab_name: str):
+        """Return the active session key for template overrides."""
+        if tab_name == "Proofread":
+            context_value = self.context_var.get() if hasattr(self, "context_var") else "general"
+            rewrite_value = bool(self.allow_rewrite_var.get()) if hasattr(self, "allow_rewrite_var") else False
+            return (tab_name, context_value, rewrite_value)
+        if tab_name == "Commands":
+            os_value = self.os_var.get() if hasattr(self, "os_var") else (self.os_options[0] if self.os_options else "macos")
+            return (tab_name, os_value)
+        return (tab_name,)
+
+    def _get_yaml_active_template(self, tab_name: str) -> str:
+        """Load YAML-derived active template for the current options."""
+        if tab_name == "Proofread":
+            return get_tab_template(
+                tab_name,
+                context_key=self.context_var.get() if hasattr(self, "context_var") else "general",
+                can_rewrite=self.allow_rewrite_var.get() if hasattr(self, "allow_rewrite_var") else False,
+            )
+        if tab_name == "Commands":
+            return get_tab_template(
+                tab_name,
+                os_value=self.os_var.get() if hasattr(self, "os_var") else (self.os_options[0] if self.os_options else "macos"),
+            )
+        return get_tab_template(tab_name)
+
+    def _set_template_text(self, tab_name: str, value: str):
+        widget = self.prompt_widgets[tab_name]
+        widget.delete("1.0", tk.END)
+        widget.insert("1.0", value)
+
+    def _activate_template_for_state(self, tab_name: str, persist_current: bool = True):
+        """Switch template text based on current options and session overrides."""
+        if tab_name not in self.prompt_widgets:
+            return
+        old_key = self.active_template_keys.get(tab_name)
+        if persist_current and old_key is not None:
+            current_text = self.prompt_widgets[tab_name].get("1.0", tk.END).rstrip("\n")
+            self.template_overrides[old_key] = current_text
+
+        new_key = self._get_template_key(tab_name)
+        self.active_template_keys[tab_name] = new_key
+        if new_key in self.template_overrides:
+            template_text = self.template_overrides[new_key]
+        else:
+            template_text = self._get_yaml_active_template(tab_name)
+        self._set_template_text(tab_name, template_text)
+
+    def _on_proofread_options_change(self):
+        self._activate_template_for_state("Proofread", persist_current=True)
+
+    def _on_commands_os_change(self):
+        self._activate_template_for_state("Commands", persist_current=True)
+
+    def _reset_template(self, tab_name: str):
+        """Reset current option-keyed session override back to YAML default."""
+        key = self._get_template_key(tab_name)
+        self.template_overrides.pop(key, None)
+        self.active_template_keys[tab_name] = key
+        self._set_template_text(tab_name, self._get_yaml_active_template(tab_name))
+        self.status_var.set("Template reset to YAML default for current options.")
+
     def _run_action_for_tab(self, tab_name: str):
         """Generic handler for all tab action buttons."""
         config = self.tabs_config[tab_name]
@@ -335,21 +432,19 @@ class SimplifiedTextToolsGUI:
             messagebox.showwarning("Input Required", f"Please enter {config['input_label'].lower()}")
             return
 
-        # Get the current prompt template from the GUI widget
-        prompt_template = self.prompt_widgets[tab_name].get("1.0", tk.END).strip()
+        active_template = self.prompt_widgets[tab_name].get("1.0", tk.END).rstrip("\n")
+        current_key = self._get_template_key(tab_name)
+        self.active_template_keys[tab_name] = current_key
+        self.template_overrides[current_key] = active_template
 
-        if tab_name == "Proofread":
-            prompt = f"{prompt_template}\n\nOriginal text: \"{input_text}\""
-            if self.allow_rewrite_var.get():
-                prompt += self.settings.prompts.rewrite_allowed
-            else:
-                prompt += self.settings.prompts.rewrite_forbidden
-            prompt += self.settings.prompts.output_instruction
-        else:
-            prompt = prompt_template.replace("{input}", input_text)
-            if tab_name == "Commands":
-                os_selected = self.os_var.get() if hasattr(self, 'os_var') else self.os_options[0]
-                prompt = prompt.replace("{os}", os_selected)
+        prompt = build_tab_prompt(tab_name, input_text, active_template=active_template)
+        self._render_resolved_prompt(tab_name, prompt)
+        logger.info(
+            "Resolved prompt prepared tab=%s model=%s prompt_chars=%d",
+            tab_name,
+            self.model_var.get(),
+            len(prompt),
+        )
 
         self._run_action(tab_name, prompt, config)
 
