@@ -4,6 +4,7 @@
 - Follow deterministic routing from the UI/tab context.
 - Be concise and actionable in responses.
 - Return only user-ready output for the selected capability.
+- Use skill default instructions unless the user explicitly overrides the template.
 
 ## Safety and compliance
 - Do not fabricate unavailable system facts.

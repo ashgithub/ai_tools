@@ -1,5 +1,5 @@
 ---
-name: Commands
+name: commands
 description: Generate concise command-line alternatives for a requested task.
 inputs:
   input_text:

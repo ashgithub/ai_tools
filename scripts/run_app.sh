@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run the AI Tools GUI from command line.
+# Run the AI Tools universal GUI from command line.
 #
 # Sample invocations:
-#   # Q&A tab with direct text
-#   ./scripts/run_app.sh --tab "Q&A" --text "What is the difference between TCP and UDP?"
+#   # Ask / explain default (auto nudge)
+#   ./scripts/run_app.sh --text "What is the difference between TCP and UDP?"
 #
-#   # Proofread in Slack context (tab chosen by app mapping)
-#   ./scripts/run_app.sh --app slack --text "hi team pls review the doc by tomrw"
+#   # Slack-proofread nudge
+#   ./scripts/run_app.sh --app slack --nudge slack --text "hi team pls review the doc by tomrw"
 #
-#   # Proofread email explicitly
-#   ./scripts/run_app.sh --tab Proofread --app gmail --text "hey can u send me update"
+#   # Commands nudge
+#   ./scripts/run_app.sh --nudge commands --text "find all .py files modified in last 24 hours"
 #
-#   # Commands tab
-#   ./scripts/run_app.sh --tab Commands --text "find all .py files modified in last 24 hours"
-#
-#   # Pipe stdin text (if --text is omitted)
-#   echo "pls fix grammar" | ./scripts/run_app.sh --tab Proofread
+#   # Pipe stdin text
+#   echo "pls fix grammar" | ./scripts/run_app.sh --nudge proofread
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"

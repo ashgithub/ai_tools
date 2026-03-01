@@ -1,6 +1,5 @@
 # AI Tools Configuration
 
-# OCI Configuration
 oci:
   service_endpoint: "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com"
   base_url: "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1"
@@ -8,52 +7,31 @@ oci:
   profile: "API-USER"
   default_model: "xai.grok-4-fast-non-reasoning"
 
-# Model cache settings
 model_cache:
   enabled: true
   directory: ".cache"
   filename: "oci_models_cache.json"
   refresh_hours: 24
 
-# Tab Configurations
-tabs:
-  Proofread:
-    input_label: "Text to Proofread:"
-    button_text: "Proofread"
-    config_frame: "_create_context_frame"
-  Explain:
-    input_label: "Technical Text to Explain:"
-    button_text: "Explain"
-    config_frame: null
-  Commands:
-    input_label: "Task Description:"
-    button_text: "Get Commands"
-    config_frame: "_create_os_frame"
-  Q&A:
-    input_label: "Question:"
-    button_text: "Ask"
-    config_frame: null
+agentic_routing:
+  enabled: true
+  default_nudge: "auto"
+  nudge_presets:
+    - auto
+    - proofread
+    - slack
+    - email
+    - commands
+    - explain
+    - ask
+  nudge_prompts:
+    auto: "Choose the best skill for the user request and respond in the required schema."
+    proofread: "Proofread the given text. Return corrected and rewritten versions."
+    slack: "Proofread the given text for Slack. Keep it concise, friendly, and professional."
+    email: "Proofread the given text for email. Keep it clear, professional, and polished."
+    commands: "Recommend 1 to 3 command-line alternatives for the requested task."
+    explain: "Explain the given content clearly in simple, practical language."
+    ask: "Answer the given question directly and concisely."
 
-# Commands Configuration
-commands:
-  os_options: ["macos", "linux"]
-
-# Logging Configuration
 logging:
   level: "ERROR"
-
-# App to Tab Mappings
-# Tab-oriented mappings with list of apps per config
-app_mappings:
-  Proofread:
-    - context: email
-      apps: [mail, outlook, thunderbird, gmail, applemail]
-    - context: slack
-      apps: [slack, discord, teams, mattermost, zoom, skype, whatsapp]
-  Explain:
-    - apps: [safari, chrome, code, firefox, edge, opera, brave, arc, vivaldi]
-  Commands:
-    - os: macos
-      apps: [terminal, iterm2, alacritty, hyper, warp, tabby, kitty, terminator]
-  Q&A:
-    - apps: []  # Default if no app or no match

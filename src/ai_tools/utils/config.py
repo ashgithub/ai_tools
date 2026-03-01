@@ -14,7 +14,7 @@ all modules share one in-memory Settings instance.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, List
 
 import os
 import yaml
@@ -47,10 +47,6 @@ class OCI(BaseModel, extra="forbid"):
 
 
 
-class Commands(BaseModel, extra="forbid"):
-    os_options: List[str] = Field(default_factory=lambda: ["macos", "linux"])
-
-
 class Logging(BaseModel, extra="forbid"):
     level: str = Field(default="INFO")
     format: str = Field(default="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -61,6 +57,33 @@ class ModelCache(BaseModel, extra="forbid"):
     directory: str = Field(default=".cache")
     filename: str = Field(default="oci_models_cache.json")
     refresh_hours: int = Field(default=24)
+
+
+class AgenticRouting(BaseModel, extra="forbid"):
+    enabled: bool = Field(default=True)
+    default_nudge: str = Field(default="auto")
+    nudge_presets: List[str] = Field(
+        default_factory=lambda: [
+            "auto",
+            "proofread",
+            "slack",
+            "email",
+            "commands",
+            "explain",
+            "ask",
+        ]
+    )
+    nudge_prompts: dict[str, str] = Field(
+        default_factory=lambda: {
+            "proofread": "Proofread the given text. Return corrected and rewritten versions.",
+            "slack": "Proofread the given text for Slack. Keep it concise, friendly, and professional.",
+            "email": "Proofread the given text for email. Keep it clear, professional, and polished.",
+            "commands": "Recommend 1 to 3 command-line alternatives for the requested task.",
+            "explain": "Explain the given content clearly in simple, practical language.",
+            "ask": "Answer the given question directly and concisely.",
+            "auto": "Choose the best skill for the user request and respond in the required schema.",
+        }
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -76,11 +99,9 @@ class Settings(BaseSettings):
     )
 
     oci: OCI = OCI()
-    tabs: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    commands: Commands = Commands()
-    app_mappings: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     logging: Logging = Logging()
     model_cache: ModelCache = ModelCache()
+    agentic_routing: AgenticRouting = AgenticRouting()
 
 
 # --------------------------------------------------------------------------- #
@@ -123,9 +144,9 @@ def get_settings() -> Settings:
 
 __all__ = [
     "OCI",
-    "Commands",
     "Logging",
     "ModelCache",
+    "AgenticRouting",
     "Settings",
     "get_settings",
 ]

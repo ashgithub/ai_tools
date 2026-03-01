@@ -1,37 +1,39 @@
-"""Deep Agents runtime facade with deterministic routing and fail-fast errors."""
+"""Deep Agents runtime facade for agentic execution with nudge-selected schemas."""
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
+import logging
 from pathlib import Path
 import subprocess
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from ai_tools.agent_runtime.errors import (
-    AgentRuntimeError,
-    SkillExecutionError,
-    SkillValidationError,
+from ai_tools.agent_runtime.errors import AgentRuntimeError, SkillExecutionError, SkillValidationError
+from ai_tools.agent_runtime.routing import (
+    COMMAND_APPS,
+    EMAIL_APPS,
+    SLACK_APPS,
+    normalize_app_name,
+    resolve_schema_family,
 )
-from ai_tools.agent_runtime.routing import resolve_skill_id
 from ai_tools.agent_runtime.skills import discover_skills
 from ai_tools.agent_runtime.types import (
     AgentRequest,
     AgentResponse,
-    AskOutput,
-    CommandsOutput,
-    ExplainOutput,
-    GenericTextOutput,
-    ProofreadOutput,
+    Alternatives,
+    SingleText,
     SkillDefinition,
+    TextPair,
 )
 from ai_tools.oci_openai_helper import OCIOpenAIHelper
 
+logger = logging.getLogger(__name__)
+
 
 class DeepAgentRuntime:
-    """Runtime wrapper that routes UI requests to skill-driven execution."""
+    """Runtime wrapper that executes agentic Deep Agents with shared schemas."""
 
     def __init__(self, settings, *, project_root: Path | None = None) -> None:
         self.settings = settings
@@ -39,136 +41,148 @@ class DeepAgentRuntime:
         self.skills_root = self.project_root / "skills"
         self.agents_memory_path = self.project_root / "AGENTS.md"
         self.skills = discover_skills(self.skills_root)
-        self.global_memory = self._load_global_memory()
+        self._validate_global_memory()
 
     def reload(self) -> None:
         self.skills = discover_skills(self.skills_root)
-        self.global_memory = self._load_global_memory()
+        self._validate_global_memory()
 
-    def _schema_for_skill(self, skill_id: str) -> tuple[type[BaseModel], str]:
-        if skill_id == "commands":
-            return CommandsOutput, "commands"
-        if skill_id in {"proofread-general", "proofread-slack", "proofread-email"}:
-            return ProofreadOutput, "proofread"
-        if skill_id == "ask":
-            return AskOutput, "single_line"
-        if skill_id == "explain":
-            return ExplainOutput, "single_line"
-        return GenericTextOutput, "single_line"
-
-    def _primary_output_from_structured(self, skill_id: str, structured: dict[str, Any]) -> str:
-        if skill_id == "commands":
-            alternatives = structured.get("alternatives") or []
-            if not alternatives:
-                return ""
-            first = alternatives[0] if isinstance(alternatives[0], dict) else {}
-            return str(first.get("command", "")).strip()
-        if skill_id in {"proofread-general", "proofread-slack", "proofread-email"}:
-            return str(structured.get("rewritten", "")).strip()
-        if skill_id == "ask":
-            return str(structured.get("answer", "")).strip()
-        if skill_id == "explain":
-            return str(structured.get("explanation", "")).strip()
-        return str(structured.get("output_text", "")).strip()
-
-    def _load_global_memory(self) -> str:
+    def _validate_global_memory(self) -> None:
         if not self.agents_memory_path.exists():
             raise SkillValidationError(
                 code="SKILL_NOT_FOUND",
                 message=f"Missing AGENTS.md at {self.agents_memory_path}",
             )
-        return self.agents_memory_path.read_text(encoding="utf-8").strip()
 
-    def _get_skill(self, skill_id: str) -> SkillDefinition:
-        skill = self.skills.get(skill_id)
+    def _schema_for_request(self, request: AgentRequest) -> tuple[type[BaseModel], str]:
+        family = resolve_schema_family(request)
+        if family == "alternatives":
+            return Alternatives, "alternatives"
+        if family == "text_pair":
+            return TextPair, "text_pair"
+        if family == "refresh":
+            return SingleText, "refresh"
+        return SingleText, "single_text"
+
+    @staticmethod
+    def _build_execution_summary(
+        request: AgentRequest,
+        schema_model: type[BaseModel],
+        render_kind: str,
+        skills_path: Path,
+        memory_path: Path,
+    ) -> str:
+        payload = {
+            "model": request.selected_model,
+            "nudge": request.options.get("nudge"),
+            "nudge_prompt": request.options.get("nudge_prompt"),
+            "app_context": request.app_context,
+            "schema": schema_model.__name__,
+            "render_kind": render_kind,
+            "backend": "FilesystemBackend",
+            "skills_source": str(skills_path),
+            "memory_source": str(memory_path),
+        }
+        return json.dumps(payload, indent=2)
+
+    @staticmethod
+    def _primary_output(render_kind: str, structured: dict[str, Any]) -> str:
+        if render_kind == "alternatives":
+            alternatives = structured.get("alternatives")
+            if isinstance(alternatives, list) and alternatives:
+                first = alternatives[0]
+                if isinstance(first, dict):
+                    return str(first.get("value", "")).strip()
+            return ""
+        if render_kind == "text_pair":
+            return str(structured.get("rewritten", "")).strip()
+        return str(structured.get("text", "")).strip()
+
+    def _get_refresh_skill(self) -> SkillDefinition:
+        skill = self.skills.get("refresh-llms")
         if not skill:
             raise SkillValidationError(
                 code="SKILL_NOT_FOUND",
-                message=f"Resolved skill not found: {skill_id}",
+                message="Missing refresh-llms skill",
             )
         return skill
 
-    def resolve_skill(self, request: AgentRequest) -> str:
-        skill_id = resolve_skill_id(request)
-        self._get_skill(skill_id)
-        return skill_id
+    def _resolve_nudge_prompt(self, request: AgentRequest, render_kind: str) -> tuple[str, str]:
+        nudge_prompts = self.settings.agentic_routing.nudge_prompts
+        nudge = str(request.options.get("nudge", "")).strip().lower()
+        if nudge and nudge in nudge_prompts:
+            return nudge_prompts[nudge], nudge
 
-    def preview_instruction(self, request: AgentRequest) -> tuple[str, str]:
-        skill_id = self.resolve_skill(request)
-        skill = self._get_skill(skill_id)
-        return skill_id, skill.instruction
+        app = normalize_app_name(request.app_context)
+        if app in SLACK_APPS and "slack" in nudge_prompts:
+            return nudge_prompts["slack"], "slack"
+        if app in EMAIL_APPS and "email" in nudge_prompts:
+            return nudge_prompts["email"], "email"
+        if app in COMMAND_APPS and "commands" in nudge_prompts:
+            return nudge_prompts["commands"], "commands"
 
-    def preview_resolved_payload(self, request: AgentRequest, *, instruction_override: str | None = None) -> str:
-        skill_id = self.resolve_skill(request)
-        skill = self._get_skill(skill_id)
-        return self._build_resolved_payload(
-            request=request,
-            skill=skill,
-            instruction_override=instruction_override,
+        if render_kind == "text_pair" and "proofread" in nudge_prompts:
+            return nudge_prompts["proofread"], "proofread"
+        if render_kind == "alternatives" and "commands" in nudge_prompts:
+            return nudge_prompts["commands"], "commands"
+        if render_kind == "single_text" and "ask" in nudge_prompts:
+            return nudge_prompts["ask"], "ask"
+
+        return nudge_prompts.get("auto", ""), "auto"
+
+    def preview_execution_summary(self, request: AgentRequest) -> str:
+        schema_model, render_kind = self._schema_for_request(request)
+        return self._build_execution_summary(
+            request,
+            schema_model,
+            render_kind,
+            self.skills_root,
+            self.agents_memory_path,
         )
-
-    def _build_resolved_payload(
-        self,
-        request: AgentRequest,
-        skill: SkillDefinition,
-        instruction_override: str | None,
-    ) -> str:
-        instruction = instruction_override if instruction_override and instruction_override.strip() else skill.instruction
-        payload = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "skill_id": skill.skill_id,
-            "skill_name": skill.name,
-            "skill_instruction": instruction,
-            "global_memory": self.global_memory,
-            "input_text": request.input_text,
-            "options": request.options,
-            "selected_model": request.selected_model,
-        }
-        return json.dumps(payload, indent=2)
 
     def invoke(self, request: AgentRequest) -> AgentResponse:
         trace: list[str] = []
         try:
-            skill_id = self.resolve_skill(request)
-            trace.append(f"resolved_skill={skill_id}")
-            skill = self._get_skill(skill_id)
-
-            override = request.options.get("instruction_override")
-            resolved_payload = self._build_resolved_payload(
-                request=request,
-                skill=skill,
-                instruction_override=str(override) if override is not None else None,
-            )
-
-            if skill.execution_mode == "builtin.refresh_models":
-                output = self._execute_refresh_models(skill)
+            action = str(request.options.get("action", "")).strip().lower()
+            if action == "refresh_models":
+                output = self._execute_refresh_models(self._get_refresh_skill())
                 trace.append("executor=builtin.refresh_models")
                 return AgentResponse(
                     output_text=output,
-                    skill_id=skill_id,
+                    skill_id="refresh-llms",
                     model_used=request.selected_model,
                     trace=trace,
-                    resolved_payload=resolved_payload,
-                    structured_output={"output_text": output},
+                    execution_summary=self.preview_execution_summary(request),
+                    structured_output={"text": output},
                     primary_output=output,
                     render_kind="refresh",
                 )
 
-            schema_model, render_kind = self._schema_for_skill(skill_id)
-            structured = self._execute_deep_agent(request, skill, resolved_payload, schema_model)
-            primary = self._primary_output_from_structured(skill_id, structured)
+            schema_model, render_kind = self._schema_for_request(request)
+            nudge_prompt, nudge_prompt_key = self._resolve_nudge_prompt(request, render_kind)
+            request.options["nudge_prompt"] = nudge_prompt
+            request.options["nudge_prompt_key"] = nudge_prompt_key
+            trace.append(f"schema={schema_model.__name__}")
+            structured = self._execute_deep_agent(request, schema_model)
+            primary = self._primary_output(render_kind, structured)
             if not primary:
                 raise SkillExecutionError(
                     code="SKILL_EXECUTION_FAILED",
-                    message=f"Structured output missing primary value for skill={skill_id}",
+                    message=f"Structured output missing primary value for render_kind={render_kind}",
                 )
-            trace.append("executor=deepagents")
+
             return AgentResponse(
                 output_text=primary,
-                skill_id=skill_id,
+                skill_id="agentic",
                 model_used=request.selected_model,
                 trace=trace,
-                resolved_payload=resolved_payload,
+                execution_summary=self._build_execution_summary(
+                    request,
+                    schema_model,
+                    render_kind,
+                    self.skills_root,
+                    self.agents_memory_path,
+                ),
                 structured_output=structured,
                 primary_output=primary,
                 render_kind=render_kind,
@@ -176,9 +190,10 @@ class DeepAgentRuntime:
         except AgentRuntimeError:
             raise
         except Exception as exc:
+            logger.exception("Deep agent invocation failed")
             raise SkillExecutionError(
                 code="SKILL_EXECUTION_FAILED",
-                message=f"Unhandled skill execution failure: {exc}",
+                message=f"Deep agent invocation failed: {exc}",
             ) from exc
 
     def _execute_refresh_models(self, skill: SkillDefinition) -> str:
@@ -202,28 +217,8 @@ class DeepAgentRuntime:
             )
         return (result.stdout or "Model cache refreshed.").strip()
 
-    def _extract_message_content(self, msg: Any) -> str:
-        if isinstance(msg, dict):
-            content = msg.get("content")
-        else:
-            content = getattr(msg, "content", None)
-        if isinstance(content, str):
-            return content.strip()
-        if isinstance(content, list):
-            parts: list[str] = []
-            for item in content:
-                if isinstance(item, str):
-                    parts.append(item)
-                elif isinstance(item, dict):
-                    text = item.get("text")
-                    if isinstance(text, str):
-                        parts.append(text)
-            return "\n".join(p.strip() for p in parts if p and p.strip()).strip()
-        return ""
-
-    def _coerce_structured_output(
-        self, result: Any, schema_model: type[BaseModel], skill_id: str
-    ) -> dict[str, Any]:
+    @staticmethod
+    def _extract_structured_response(result: Any, schema_model: type[BaseModel]) -> dict[str, Any]:
         structured_raw: Any = None
         if isinstance(result, dict):
             structured_raw = result.get("structured_response")
@@ -232,59 +227,28 @@ class DeepAgentRuntime:
                 structured_raw = result.get("structured_response")
             except Exception:
                 structured_raw = None
+
         if isinstance(structured_raw, BaseModel):
             return structured_raw.model_dump()
-        if isinstance(structured_raw, dict):
-            try:
-                return schema_model.model_validate(structured_raw).model_dump()
-            except ValidationError as exc:
-                raise SkillExecutionError(
-                    code="SKILL_EXECUTION_FAILED",
-                    message=f"Invalid structured_response for skill={skill_id}: {exc}",
-                ) from exc
-        if structured_raw is not None:
-            try:
-                return schema_model.model_validate(structured_raw).model_dump()
-            except ValidationError as exc:
-                raise SkillExecutionError(
-                    code="SKILL_EXECUTION_FAILED",
-                    message=f"Invalid structured_response for skill={skill_id}: {exc}",
-                ) from exc
 
-        # Fallback to latest message content and parse as JSON/object for a repair attempt path.
-        messages = result.get("messages") if isinstance(result, dict) else None
-        if isinstance(messages, list):
-            for msg in reversed(messages):
-                content = self._extract_message_content(msg)
-                if not content:
-                    continue
-                try:
-                    maybe_json = json.loads(content)
-                    return schema_model.model_validate(maybe_json).model_dump()
-                except Exception:
-                    continue
+        if structured_raw is None:
+            raise SkillExecutionError(
+                code="SKILL_EXECUTION_FAILED",
+                message="Deep agent result missing structured_response",
+            )
 
-        raise SkillExecutionError(
-            code="SKILL_EXECUTION_FAILED",
-            message=f"Missing structured_response for skill={skill_id}",
-        )
+        try:
+            return schema_model.model_validate(structured_raw).model_dump()
+        except ValidationError as exc:
+            raise SkillExecutionError(
+                code="SKILL_EXECUTION_FAILED",
+                message=f"Structured response validation failed: {exc}",
+            ) from exc
 
-    def _build_repair_prompt(self, skill_id: str, resolved_payload: str) -> str:
-        return (
-            f"Return ONLY valid JSON for skill '{skill_id}' that matches the configured response schema. "
-            "No prose, no markdown, no code fences.\n\n"
-            f"{resolved_payload}"
-        )
-
-    def _execute_deep_agent(
-        self,
-        request: AgentRequest,
-        skill: SkillDefinition,
-        resolved_payload: str,
-        schema_model: type[BaseModel],
-    ) -> dict[str, Any]:
+    def _execute_deep_agent(self, request: AgentRequest, schema_model: type[BaseModel]) -> dict[str, Any]:
         try:
             from deepagents import create_deep_agent
+            from deepagents.backends import FilesystemBackend
         except Exception as exc:
             raise SkillExecutionError(
                 code="SKILL_EXECUTION_FAILED",
@@ -301,45 +265,41 @@ class DeepAgentRuntime:
             config=self.settings.model_dump(),
         )
 
+        nudge = str(request.options.get("nudge", "")).strip()
+        nudge_prompt = str(request.options.get("nudge_prompt", "")).strip()
+        app_context = str(request.app_context or "").strip()
+        prompt_parts = [request.input_text.strip()]
+        if nudge_prompt:
+            prompt_parts.append(f"Task nudge: {nudge_prompt}")
+        if nudge:
+            prompt_parts.append(f"Nudge: {nudge}")
+        if app_context:
+            prompt_parts.append(f"App context: {app_context}")
+        prompt = "\n\n".join(p for p in prompt_parts if p)
+
         try:
             agent = create_deep_agent(
                 model=model,
-                system_prompt=self.global_memory,
-                memory=[str(self.agents_memory_path)],
-                skills=[str(self.skills_root)],
+                backend=FilesystemBackend(root_dir=self.project_root, virtual_mode=False),
+                memory=["AGENTS.md"],
+                skills=["skills"],
                 response_format=schema_model,
             )
-            prompt = (
-                f"Execute skill '{skill.skill_id}' using the following payload. "
-                "Do not mention internal payload structure in the final answer.\n\n"
-                f"{resolved_payload}"
+            result = agent.invoke(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt,
+                        }
+                    ]
+                }
             )
-            last_error: Exception | None = None
-            for attempt in range(2):
-                current_prompt = prompt if attempt == 0 else self._build_repair_prompt(
-                    skill.skill_id, resolved_payload
-                )
-                result = agent.invoke(
-                    {
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": current_prompt,
-                            }
-                        ]
-                    }
-                )
-                try:
-                    return self._coerce_structured_output(result, schema_model, skill.skill_id)
-                except SkillExecutionError as exc:
-                    last_error = exc
-            raise SkillExecutionError(
-                code="SKILL_EXECUTION_FAILED",
-                message=f"Structured output validation failed after retry: {last_error}",
-            )
+            return self._extract_structured_response(result, schema_model)
         except AgentRuntimeError:
             raise
         except Exception as exc:
+            logger.exception("Deep agent runtime exception")
             raise SkillExecutionError(
                 code="SKILL_EXECUTION_FAILED",
                 message=f"Deep agent invocation failed: {exc}",

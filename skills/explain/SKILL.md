@@ -1,5 +1,5 @@
 ---
-name: Explain
+name: explain
 description: Explain technical or complex content in a clear, easy-to-understand way.
 inputs:
   input_text:

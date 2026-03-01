@@ -9,30 +9,22 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-class CommandAlternative(BaseModel):
-    command: str
-    explanation: str
+class SingleText(BaseModel):
+    text: str
 
 
-class CommandsOutput(BaseModel):
-    alternatives: list[CommandAlternative] = Field(min_length=1, max_length=3)
-
-
-class ProofreadOutput(BaseModel):
-    original: str
+class TextPair(BaseModel):
+    corrected: str
     rewritten: str
 
 
-class AskOutput(BaseModel):
-    answer: str
-
-
-class ExplainOutput(BaseModel):
+class Alternative(BaseModel):
+    value: str
     explanation: str
 
 
-class GenericTextOutput(BaseModel):
-    output_text: str
+class Alternatives(BaseModel):
+    alternatives: list[Alternative] = Field(min_length=1, max_length=3)
 
 
 @dataclass(slots=True)
@@ -51,10 +43,10 @@ class AgentResponse:
     model_used: str | None
     trace: list[str] = field(default_factory=list)
     error: str | None = None
-    resolved_payload: str | None = None
+    execution_summary: str | None = None
     structured_output: dict[str, Any] | None = None
     primary_output: str = ""
-    render_kind: Literal["commands", "proofread", "single_line", "refresh"] = "single_line"
+    render_kind: Literal["alternatives", "text_pair", "single_text", "refresh"] = "single_text"
 
 
 @dataclass(slots=True)
