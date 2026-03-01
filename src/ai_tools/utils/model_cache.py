@@ -131,7 +131,7 @@ def get_cached_or_refreshed_models(settings) -> dict[str, Any]:
         raise ModelCatalogBootstrapError(
             "Model cache not found or invalid. "
             f"Expected cache file: {cache_file}. "
-            "Run clients/refresh_model_cache_via_oci_cli.py first."
+            "Run the refresh-llms skill to initialize the cache."
         )
 
     last_refreshed = _parse_utc(cached.get("last_refreshed_utc"))

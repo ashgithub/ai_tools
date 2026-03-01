@@ -47,20 +47,6 @@ class OCI(BaseModel, extra="forbid"):
 
 
 
-class Prompts(BaseModel, extra="forbid"):
-    rewrite_allowed: str = Field(default="")
-    rewrite_forbidden: str = Field(default="")
-    output_instruction: str = Field(default="")
-
-
-class Testing(BaseModel, extra="forbid"):
-    models_file: str = Field(default="docs/llm_models.md")
-    results_dir: str = Field(default="output/benchmarks")
-    test_prompt: str = Field(
-        default="what can you do better than any other llm in one sentence"
-    )
-
-
 class Commands(BaseModel, extra="forbid"):
     os_options: List[str] = Field(default_factory=lambda: ["macos", "linux"])
 
@@ -90,12 +76,9 @@ class Settings(BaseSettings):
     )
 
     oci: OCI = OCI()
-    prompts: Prompts = Prompts()
-    tab_prompts: Dict[str, Any] = Field(default_factory=dict)
     tabs: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     commands: Commands = Commands()
     app_mappings: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
-    testing: Testing = Testing()
     logging: Logging = Logging()
     model_cache: ModelCache = ModelCache()
 
@@ -140,9 +123,7 @@ def get_settings() -> Settings:
 
 __all__ = [
     "OCI",
-    "Prompts",
     "Commands",
-    "Testing",
     "Logging",
     "ModelCache",
     "Settings",

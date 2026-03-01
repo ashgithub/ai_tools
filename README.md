@@ -1,5 +1,21 @@
 # AI Tools
 
+## Deep Agents Skill Runtime
+
+The app now uses a skill-driven runtime:
+
+1. Global memory and behavior rules are in `AGENTS.md`.
+2. Capabilities are implemented as skills under `skills/<skill-id>/SKILL.md`.
+3. Skills are auto-discovered at startup from the `skills/` directory.
+4. UI routing is deterministic (tab/app context -> skill id) and fail-fast.
+5. Model refresh is executed only via the `refresh-llms` skill script.
+
+Run from command line with:
+
+```bash
+./scripts/run_app.sh --tab "Q&A" --text "What is LangGraph?"
+```
+
 ## Multi-monitor window placement
 
 The GUI client (`clients/multi_tool_client.py`) supports optional window placement flags:
@@ -48,10 +64,9 @@ model_cache:
 Behavior:
 
 1. If cache is fresh, use it.
-2. If cache is stale, refresh from OCI `list_models`.
-3. If refresh fails and cache exists, use stale cache.
-4. If cache is missing, bootstrap from OCI and write cache.
-5. If cache is missing and OCI bootstrap fails, the Python app exits non-zero and Lua shows the error.
+2. If cache is stale, click `Refresh Models` next to the model selector to execute the `refresh-llms` skill.
+3. If cache is missing or invalid, use the `Refresh Models` button before using text tools.
+4. If refresh fails, the app exits non-zero and shows an error.
 
 Default model selection uses a single source: `oci.default_model` in `config.yaml`.
 The cache JSON stores model metadata only and does not persist a `default_model`.

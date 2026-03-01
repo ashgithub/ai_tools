@@ -1,4 +1,3 @@
-from envyaml import EnvYAML
 from langchain_openai import ChatOpenAI
 from oci_openai import OciUserPrincipalAuth, AsyncOciOpenAI
 from pydantic import SecretStr

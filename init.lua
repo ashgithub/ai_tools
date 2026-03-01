@@ -3,19 +3,13 @@ local log = hs.logger.new('TextProcessor', 'debug')
 -- Paths
 local dir = os.getenv("HOME") .. "/work/code/python/ai_tools"
 local scriptPath = dir .. "/clients/multi_tool_client.py"
-local refreshScriptPath = dir .. "/clients/refresh_model_cache_via_oci_cli.py"
 -- local scriptMode = "-m proof"
 local default_window_width = 900
 local default_window_height = 800
 local show_screen_debug_alert = false
-local model_cache_path = dir .. "/.cache/oci_models_cache.json"
-local model_cache_refresh_hours = 24
 local status_alert_debounce_seconds = 0.25
 local last_status_at = 0
 local status_alert_durations = {
-    cache_refresh_start = 2.5,
-    cache_refresh_success = 2.0,
-    cache_refresh_fail = 4.0,
     cancelled = 1.8,
 }
 
@@ -85,9 +79,6 @@ local app_configs = {
 }
 
 local status_messages = {
-    cache_refresh_start = "Updating AI models list for %s...",
-    cache_refresh_success = "AI models list updated for %s.",
-    cache_refresh_fail = "Could not update AI models list for %s.",
     processing = "Processing message from %s...",
     cancelled = "Cancelled in AI Tools for %s.",
     error = "Error while processing %s: %s",
@@ -95,33 +86,21 @@ local status_messages = {
 
 local status_sounds = {
     slack = {
-        cache_refresh_start = "Submarine",
-        cache_refresh_success = "Glass",
-        cache_refresh_fail = "Basso",
         processing = "Ping",
         cancelled = "Tink",
         error = "Sosumi",
     },
     iterm2 = {
-        cache_refresh_start = "Submarine",
-        cache_refresh_success = "Glass",
-        cache_refresh_fail = "Basso",
         processing = "Bottle",
         cancelled = "Tink",
         error = "Sosumi",
     },
     code = {
-        cache_refresh_start = "Submarine",
-        cache_refresh_success = "Glass",
-        cache_refresh_fail = "Basso",
         processing = "Bottle",
         cancelled = "Tink",
         error = "Sosumi",
     },
     default = {
-        cache_refresh_start = "Submarine",
-        cache_refresh_success = "Glass",
-        cache_refresh_fail = "Basso",
         processing = "Bottle",
         cancelled = "Tink",
         error = "Sosumi",
@@ -250,62 +229,6 @@ local function build_window_args(trigger_window, trigger_app)
     )
 end
 
-local function is_model_cache_stale()
-    local attrs = hs.fs.attributes(model_cache_path)
-    if not attrs then
-        return true
-    end
-    local modified = attrs.modification
-    if not modified then
-        return true
-    end
-    local age_hours = (os.time() - modified) / 3600
-    return age_hours >= model_cache_refresh_hours
-end
-
-local function ensure_model_cache(app_name, on_complete)
-    if not is_model_cache_stale() then
-        on_complete(true)
-        return
-    end
-
-    show_status("cache_refresh_start", app_name)
-    local refresh_command = string.format(
-        "cd %q && /opt/homebrew/bin/uv run %q 2>&1",
-        dir, refreshScriptPath
-    )
-
-    local refresh_task = hs.task.new(
-        "/bin/zsh",
-        function(exitCode, stdOut, stdErr)
-            local combined = (((stdOut or "") .. "\n" .. (stdErr or "")):gsub("^%s+", "")):gsub("%s+$", "")
-            if exitCode ~= 0 then
-                local first_line = combined:match("([^\n]+)") or "Unknown cache refresh error"
-                log.e("Model cache refresh failed script=" .. refreshScriptPath .. " exit=" .. tostring(exitCode))
-                log.e("refresh output:\n" .. (combined ~= "" and combined or "[No output]"))
-                show_status("cache_refresh_fail", app_name, nil, true)
-                show_status("error", app_name, first_line, true)
-                on_complete(false)
-                return
-            end
-
-            show_status("cache_refresh_success", app_name)
-            hs.timer.doAfter(0.15, function()
-                on_complete(true)
-            end)
-        end,
-        { "-lc", refresh_command }
-    )
-
-    if not refresh_task then
-        show_status("cache_refresh_fail", app_name, nil, true)
-        show_status("error", app_name, "Could not start model cache refresh task.", true)
-        on_complete(false)
-        return
-    end
-    refresh_task:start()
-end
-
 local function run_processing(trigger_app, appName, config, scriptMode, windowArgs)
     -- Save original clipboard
     local originalClipboard = hs.pasteboard.getContents()
@@ -384,13 +307,8 @@ function processAppText()
     local scriptMode = string.format("--app %q", appName)
     local windowArgs = build_window_args(trigger_window, trigger_app)
 
-    ensure_model_cache(appName, function(cache_ok)
-        if not cache_ok then
-            return
-        end
-        hs.timer.doAfter(0.2, function()
-            run_processing(trigger_app, appName, config, scriptMode, windowArgs)
-        end)
+    hs.timer.doAfter(0.2, function()
+        run_processing(trigger_app, appName, config, scriptMode, windowArgs)
     end)
 end
 
