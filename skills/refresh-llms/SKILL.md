@@ -1,5 +1,5 @@
 ---
-name: Refresh LLMs
+name: refresh-llms
 description: Refresh the local OCI model cache used by the UI model selector.
 inputs:
   input_text:

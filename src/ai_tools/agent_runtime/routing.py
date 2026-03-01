@@ -1,10 +1,12 @@
-"""Deterministic tab/app routing for skill selection."""
+"""Nudge normalization helpers for agentic schema selection."""
 
 from __future__ import annotations
 
-from ai_tools.agent_runtime.errors import RouteError
+from typing import Literal
+
 from ai_tools.agent_runtime.types import AgentRequest
 
+SchemaFamily = Literal["single_text", "text_pair", "alternatives", "refresh"]
 
 EMAIL_APPS = {
     "mail",
@@ -24,45 +26,52 @@ SLACK_APPS = {
     "whatsapp",
 }
 
+COMMAND_APPS = {
+    "terminal",
+    "iterm2",
+    "alacritty",
+    "hyper",
+    "warp",
+    "tabby",
+    "kitty",
+    "terminator",
+}
+
 
 def normalize_app_name(app_context: str | None) -> str:
     return (app_context or "").strip().lower()
 
 
-def resolve_skill_id(request: AgentRequest) -> str:
-    """Resolve skill id from explicit UI routing contract."""
+def resolve_schema_family(request: AgentRequest) -> SchemaFamily:
+    """Derive expected output schema family from soft nudge context."""
     action = str(request.options.get("action", "")).strip().lower()
-    if request.ui_tab == "Refresh" or action == "refresh_models":
-        return "refresh-llms"
+    if action == "refresh_models":
+        return "refresh"
 
-    if request.ui_tab == "Explain":
-        return "explain"
-    if request.ui_tab == "Commands":
-        return "commands"
-    if request.ui_tab == "Q&A":
-        return "ask"
+    nudge = str(request.options.get("nudge", "")).strip().lower()
+    if nudge in {"proofread", "slack", "email", "rewrite"}:
+        return "text_pair"
+    if nudge in {"commands", "command", "shell", "terminal"}:
+        return "alternatives"
+    if nudge in {"ask", "explain", "qa", "q&a"}:
+        return "single_text"
 
-    if request.ui_tab != "Proofread":
-        raise RouteError(
-            code="ROUTE_UNSUPPORTED_TAB",
-            message=f"Unsupported tab: {request.ui_tab}",
-        )
+    ui_tab = (request.ui_tab or "").strip().lower()
+    if ui_tab in {"proofread", "rewrite"}:
+        return "text_pair"
+    if ui_tab in {"commands", "command"}:
+        return "alternatives"
+    if ui_tab in {"explain", "q&a", "qa", "ask"}:
+        return "single_text"
 
-    context = request.options.get("proofread_context")
-    if context is not None:
-        context = str(context).strip().lower()
-
-    if context in {"slack", "email", "general"}:
-        return f"proofread-{context}"
-    if context not in {None, ""}:
-        raise RouteError(
-            code="ROUTE_UNMAPPED_CONTEXT",
-            message=f"Unknown proofread context: {context}",
-        )
+    proofread_context = str(request.options.get("proofread_context", "")).strip().lower()
+    if proofread_context in {"slack", "email", "general"}:
+        return "text_pair"
 
     app = normalize_app_name(request.app_context)
-    if app in SLACK_APPS:
-        return "proofread-slack"
-    if app in EMAIL_APPS:
-        return "proofread-email"
-    return "proofread-general"
+    if app in SLACK_APPS or app in EMAIL_APPS:
+        return "text_pair"
+    if app in COMMAND_APPS:
+        return "alternatives"
+
+    return "single_text"

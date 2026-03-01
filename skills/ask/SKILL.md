@@ -1,5 +1,5 @@
 ---
-name: Ask
+name: ask
 description: Answer user questions accurately and concisely.
 inputs:
   input_text:

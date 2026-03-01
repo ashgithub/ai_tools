@@ -71,8 +71,7 @@ if __name__ == "__main__":
     def load_config(config_path):
         """Load configuration from a YAML file."""
         try:
-            with open(config_path, 'r') as f:
-                return EnvYAML(config_path)
+            return EnvYAML(config_path)
         except FileNotFoundError:
             print(f"Error: Configuration file '{config_path}' not found.")
             return None
@@ -100,9 +99,6 @@ if __name__ == "__main__":
         )
     #ai_msg = llm.invoke(messages)
     #print(ai_msg)
-
-    # Async example
-    import asyncio
 
     async def test_async_chat():
         test_messages=[

@@ -1,6 +1,6 @@
 ---
-name: Proofread General
-description: Improve grammar, punctuation, spelling, and readability for general prose.
+name: proofread-general
+description: proof read & Improve grammar, punctuation, spelling, and readability for general apps outside email & slack
 inputs:
   input_text:
     required: true
@@ -9,9 +9,9 @@ inputs:
     required: false
     type: string
 outputs:
-  original:
+  corrected:
     type: string
-    description: Original input text.
+    description: Minimally corrected source text.
   rewritten:
     type: string
     description: Corrected and improved text.
@@ -29,5 +29,5 @@ Task:
 
 Output requirements:
 - Return structured output with:
-  - original: the input text as received
-  - rewritten: the improved final text
+  - corrected: minimally corrected source text fixing grammer & typos
+  - rewritten: the improved final text that keeps the original intent but is rewritten for better impact

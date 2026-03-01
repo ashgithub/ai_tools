@@ -1,14 +1,14 @@
 ---
-name: Proofread Email
+name: proofread-email
 description: Proofread and polish business email text with professional structure and tone.
 inputs:
   input_text:
     required: true
     type: string
 outputs:
-  original:
+  corrected:
     type: string
-    description: Original input text.
+    description: Minimally corrected source text.
   rewritten:
     type: string
     description: Professional email-ready rewritten text.
@@ -28,5 +28,5 @@ Task:
 
 Output requirements:
 - Return structured output with:
-  - original: the input text as received
-  - rewritten: final email text
+  - corrected: minimally corrected source text fixing grammer & typos 
+  - rewritten: rewritten email text for overall improverment while preserving the original intent

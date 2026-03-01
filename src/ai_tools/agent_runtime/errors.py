@@ -12,10 +12,6 @@ class AgentRuntimeError(RuntimeError):
         super().__init__(f"[{self.code}] {self.message}")
 
 
-class RouteError(AgentRuntimeError):
-    """Routing failure with deterministic error code."""
-
-
 class SkillValidationError(AgentRuntimeError):
     """Skill schema/discovery failure."""
 

@@ -1,14 +1,14 @@
 ---
-name: Proofread Slack
+name: proofread-slack
 description: Proofread and optimize text for Slack style and readability.
 inputs:
   input_text:
     required: true
     type: string
 outputs:
-  original:
+  corrected:
     type: string
-    description: Original input text.
+    description: Minimally corrected source text.
   rewritten:
     type: string
     description: Slack-ready rewritten message.
@@ -33,5 +33,5 @@ Task:
 
 Output requirements:
 - Return structured output with:
-  - original: do not make any signicant changes to the original text. minimal makes to make it professional & well formatted for slack
+  - corrected: do not make any signicant changes to the source text. minimal changes to accomplish the task.
   - rewritten: keep the original intent but rewrite the text to be mopre professional 
