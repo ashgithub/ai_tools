@@ -62,7 +62,6 @@ class OCIOpenAIHelper:
 
         return client
 
-
 ##### test ######
 if __name__ == "__main__":
     from dotenv import load_dotenv

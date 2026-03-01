@@ -9,37 +9,13 @@ oci:
   profile: "API-USER"
   default_model: "xai.grok-4-fast-non-reasoning"
 
-# Available LLM Models
-models:
-  - "meta.llama-3.1-405b-instruct"
-  - "meta.llama-3.2-90b-vision-instruct"
-  - "meta.llama-3.3-70b-instruct"
-  - "meta.llama-4-maverick-17b-128e-instruct-fp8"
-  - "meta.llama-4-scout-17b-16e-instruct"
-  - "openai.gpt-4.1"
-  - "openai.gpt-4.1-mini"
-  - "openai.gpt-4.1-nano"
-  - "openai.gpt-4o"
-  - "openai.gpt-4o-mini"
-  - "openai.gpt-4o-mini-search-preview"
-  - "openai.gpt-4o-search-preview"
-  - "openai.gpt-5"
-  - "openai.gpt-5-mini"
-  - "openai.gpt-5-nano"
-  - "openai.o1"
-  - "openai.o3"
-  - "openai.o3-mini"
-  - "openai.o4-mini"
-  - "openai.gpt-oss-20b"
-  - "openai.gpt-oss-120b"
-  - "xai.grok-3"
-  - "xai.grok-3-fast"
-  - "xai.grok-3-mini"
-  - "xai.grok-3-mini-fast"
-  - "xai.grok-4"
-  - "xai.grok-4-fast-non-reasoning"
-  - "xai.grok-4-fast-reasoning"
-  - "xai.grok-code-fast-1"
+# Model cache settings
+model_cache:
+  enabled: true
+  directory: ".cache"
+  filename: "oci_models_cache.json"
+  refresh_hours: 24
+  preferred_default: "xai.grok-4-fast-non-reasoning"
 
 # Prompts
 prompts:

@@ -1,6 +1,7 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.py[cod]
 build/
 dist/
 wheels/
@@ -36,3 +37,4 @@ server.log
 
 # Results and outputs
 results/
+.cache/

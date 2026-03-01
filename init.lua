@@ -3,7 +3,13 @@ local log = hs.logger.new('TextProcessor', 'debug')
 -- Paths
 local dir = os.getenv("HOME") .. "/work/code/python/ai_tools"
 local scriptPath = dir .. "/clients/multi_tool_client.py"
+local refreshScriptPath = dir .. "/clients/refresh_model_cache_via_oci_cli.py"
 -- local scriptMode = "-m proof"
+local default_window_width = 900
+local default_window_height = 800
+local show_screen_debug_alert = true
+local model_cache_path = dir .. "/.cache/oci_models_cache.json"
+local model_cache_refresh_hours = 24
 
 local terminal_config = {  -- Shared config for terminal-like apps (iTerm2, Code)
     copy = function()
@@ -70,11 +76,118 @@ local app_configs = {
     }
 }
 
+local function clamp(value, min_value, max_value)
+    if value < min_value then
+        return min_value
+    end
+    if value > max_value then
+        return max_value
+    end
+    return value
+end
+
+local function log_screen_strategy(strategy, screen)
+    local screen_name = (screen and screen:name()) or "unknown"
+    log.i(string.format("Window target strategy=%s screen=%s", strategy, screen_name))
+    if show_screen_debug_alert then
+        hs.alert.show(string.format("Screen target: %s (%s)", strategy, screen_name), 1)
+    end
+end
+
+local function resolve_target_screen(trigger_window, trigger_app)
+    if trigger_window then
+        local window_screen = trigger_window:screen()
+        if window_screen then
+            return window_screen, "focusedWindow"
+        end
+    end
+
+    if trigger_app then
+        local main_window = trigger_app:mainWindow()
+        if main_window then
+            local main_screen = main_window:screen()
+            if main_screen then
+                return main_screen, "mainWindow"
+            end
+        end
+    end
+
+    local mouse_screen = hs.mouse.getCurrentScreen()
+    if mouse_screen then
+        return mouse_screen, "mouse"
+    end
+
+    local primary = hs.screen.primaryScreen()
+    return primary, "primary"
+end
+
+local function build_window_args(trigger_window, trigger_app)
+    local screen, strategy = resolve_target_screen(trigger_window, trigger_app)
+    log_screen_strategy(strategy, screen)
+    if not screen then
+        return string.format("--window-width %d --window-height %d", default_window_width, default_window_height)
+    end
+
+    local frame = screen:frame()
+    local max_x = frame.x + math.max(0, frame.w - default_window_width)
+    local max_y = frame.y + math.max(0, frame.h - default_window_height)
+    local centered_x = frame.x + ((frame.w - default_window_width) / 2)
+    local centered_y = frame.y + ((frame.h - default_window_height) / 2)
+    local window_x = math.floor(clamp(centered_x, frame.x, max_x))
+    local window_y = math.floor(clamp(centered_y, frame.y, max_y))
+
+    return string.format(
+        "--window-width %d --window-height %d --window-x %d --window-y %d",
+        default_window_width, default_window_height, window_x, window_y
+    )
+end
+
+local function is_model_cache_stale()
+    local attrs = hs.fs.attributes(model_cache_path)
+    if not attrs then
+        return true
+    end
+    local modified = attrs.modification
+    if not modified then
+        return true
+    end
+    local age_hours = (os.time() - modified) / 3600
+    return age_hours >= model_cache_refresh_hours
+end
+
+local function ensure_model_cache()
+    if not is_model_cache_stale() then
+        return true
+    end
+
+    hs.alert.show("Refreshing model cache...", 1.5)
+    local refresh_command = string.format(
+        "cd %q && /opt/homebrew/bin/uv run %q 2>&1",
+        dir, refreshScriptPath
+    )
+    local output, ok, _, rc = hs.execute(refresh_command, true)
+    if not ok then
+        local error_text = (output or ""):gsub("%s+$", "")
+        local first_line = error_text:match("([^\n]+)") or "Unknown cache refresh error"
+        log.e("Model cache refresh failed script=" .. refreshScriptPath .. " exit=" .. tostring(rc))
+        log.e("refresh output:\n" .. (error_text ~= "" and error_text or "[No output]"))
+        hs.alert.show("Model cache refresh failed: " .. refreshScriptPath .. "\n" .. first_line, 4)
+        return false
+    end
+    return true
+end
+
 function processAppText()
-    local app = hs.application.frontmostApplication()
-    local appName = app and app:name() or ""
+    local trigger_window = hs.window.focusedWindow()
+    local trigger_app = (trigger_window and trigger_window:application()) or hs.application.frontmostApplication()
+    local appName = trigger_app and trigger_app:name() or ""
     local config = app_configs[appName] or app_configs["default"]
-    local scriptMode = "--app ".. "\"" .. appName .. "\""
+    local scriptMode = string.format("--app %q", appName)
+    local windowArgs = build_window_args(trigger_window, trigger_app)
+
+    if not ensure_model_cache() then
+        return
+    end
 
     hs.alert.show("Processing selected text from " .. appName .. "...")
 
@@ -97,7 +210,10 @@ function processAppText()
         return
     end
 
-    local heredoc = string.format("cd %s && /opt/homebrew/bin/uv run %s %s <<'EOF'\n%s\nEOF", dir, scriptPath, scriptMode, text)
+    local heredoc = string.format(
+        "cd %s && /opt/homebrew/bin/uv run %s %s %s <<'EOF'\n%s\nEOF",
+        dir, scriptPath, scriptMode, windowArgs, text
+    )
     hs.alert.show("Sending to AI Tools for processing...")
 
     local task = hs.task.new("/bin/zsh",
@@ -108,7 +224,11 @@ function processAppText()
             log.d("stderr:\n" .. (stdErr or "[No stderr]"))
 
             if exitCode ~= 0 then
-                hs.alert.show("Python script failed! Check logs.")
+                local stderr_text = (stdErr or ""):gsub("%s+$", "")
+                local first_line = stderr_text:match("([^\n]+)") or "Unknown error"
+                log.e("Model/tool execution failed script=" .. scriptPath)
+                log.e("stderr:\n" .. (stderr_text ~= "" and stderr_text or "[No stderr]"))
+                hs.alert.show("Model catalog init failed: " .. scriptPath .. "\n" .. first_line, 4)
                 return
             end
 
@@ -121,7 +241,9 @@ function processAppText()
 
             hs.pasteboard.setContents(stdOut)
 
-            app:activate()
+            if trigger_app then
+                trigger_app:activate()
+            end
             hs.timer.usleep(200000)
 
             config.paste()

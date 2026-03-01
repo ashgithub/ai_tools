@@ -70,6 +70,14 @@ class Logging(BaseModel, extra="forbid"):
     format: str = Field(default="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
+class ModelCache(BaseModel, extra="forbid"):
+    enabled: bool = Field(default=True)
+    directory: str = Field(default=".cache")
+    filename: str = Field(default="oci_models_cache.json")
+    refresh_hours: int = Field(default=24)
+    preferred_default: str | None = Field(default=None)
+
+
 # --------------------------------------------------------------------------- #
 # 2. Aggregate Settings model
 # --------------------------------------------------------------------------- #
@@ -83,7 +91,6 @@ class Settings(BaseSettings):
     )
 
     oci: OCI = OCI()
-    models: List[str] = Field(default_factory=list)
     prompts: Prompts = Prompts()
     tab_prompts: Dict[str, Any] = Field(default_factory=dict)
     tabs: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
@@ -91,6 +98,7 @@ class Settings(BaseSettings):
     app_mappings: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
     testing: Testing = Testing()
     logging: Logging = Logging()
+    model_cache: ModelCache = ModelCache()
 
 
 # --------------------------------------------------------------------------- #
@@ -137,6 +145,7 @@ __all__ = [
     "Commands",
     "Testing",
     "Logging",
+    "ModelCache",
     "Settings",
     "get_settings",
 ]

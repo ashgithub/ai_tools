@@ -13,6 +13,10 @@ import time
 from typing import Optional, Any
 from ai_tools.oci_openai_helper import OCIOpenAIHelper
 from ai_tools.utils.config import get_settings
+from ai_tools.utils.model_cache import (
+    ModelCatalogBootstrapError,
+    get_cached_or_refreshed_models,
+)
 from ai_tools.utils.prompts import build_tab_prompt
 
 logging.basicConfig(
@@ -27,14 +31,16 @@ class SimplifiedTextToolsGUI:
 
     def __init__(self, root):
         self.root = root
+        self.args = self._parse_args()
         self.root.title("AI Text Tools")
-        self.root.geometry("900x800")
+        self._configure_window_geometry()
         self.root.minsize(800, 700)
         self.root.resizable(True, True)
 
+        self.settings = get_settings()
         self._oci_client: Optional[Any] = None
         self.selected_model: Optional[str] = None
-        self.available_models = self._load_available_models()
+        self.available_models, self.initial_default_model = self._load_available_models()
         self.last_result: Optional[str] = None
         self.current_text = ""
         self.previous_tab = None
@@ -47,13 +53,11 @@ class SimplifiedTextToolsGUI:
         self.sub_notebooks = {}
         self.sub_notebook_selections = {}
 
-        self.args = self._parse_args()
         # Read from stdin if --text not provided and stdin is not a tty
         if self.args.text is None:
             if not sys.stdin.isatty():
                 self.args.text = sys.stdin.read().strip()
         self.current_text = self.args.text or ""
-        self.settings = get_settings()
         self.app_mappings = self.settings.app_mappings
         self.tab_prompts = self.settings.tab_prompts
         self.tabs_config = self.settings.tabs
@@ -67,7 +71,31 @@ class SimplifiedTextToolsGUI:
         parser = argparse.ArgumentParser(description='AI Text Tools GUI')
         parser.add_argument('--app', help='Application context to select the appropriate tab based on config.yaml mappings')
         parser.add_argument('--text', help='Text content to pre-populate in the selected tab\'s input field')
+        parser.add_argument('--window-x', type=int, help='X position of the application window')
+        parser.add_argument('--window-y', type=int, help='Y position of the application window')
+        parser.add_argument('--window-width', type=int, default=900, help='Window width')
+        parser.add_argument('--window-height', type=int, default=800, help='Window height')
         return parser.parse_args()
+
+    def _configure_window_geometry(self):
+        """Configure initial window geometry and clamp to visible virtual bounds."""
+        width = max(800, self.args.window_width)
+        height = max(700, self.args.window_height)
+
+        if self.args.window_x is None or self.args.window_y is None:
+            self.root.geometry(f"{width}x{height}")
+            return
+
+        self.root.update_idletasks()
+        vroot_x = self.root.winfo_vrootx()
+        vroot_y = self.root.winfo_vrooty()
+        vroot_width = self.root.winfo_vrootwidth()
+        vroot_height = self.root.winfo_vrootheight()
+        max_x = vroot_x + max(0, vroot_width - width)
+        max_y = vroot_y + max(0, vroot_height - height)
+        clamped_x = min(max(self.args.window_x, vroot_x), max_x)
+        clamped_y = min(max(self.args.window_y, vroot_y), max_y)
+        self.root.geometry(f"{width}x{height}+{clamped_x}+{clamped_y}")
 
     def _get_mapping_for_app(self, app):
         """Get tab and config for a given app from mappings."""
@@ -77,11 +105,33 @@ class SimplifiedTextToolsGUI:
                     return {'tab': tab, 'config': config}
         return None
 
-    def _load_available_models(self) -> list:
-        """Load available LLM models from config."""
-        settings = get_settings()
-        models = settings.models if settings.models else [settings.oci.default_model]
-        return models
+    def _load_available_models(self) -> tuple[list[str], str]:
+        """Load available LLM models using strict OCI-backed cache semantics."""
+        try:
+            catalog = get_cached_or_refreshed_models(self.settings)
+        except ModelCatalogBootstrapError:
+            raise
+        except Exception as exc:
+            raise ModelCatalogBootstrapError(
+                f"Unexpected model catalog error while loading cache/OCI models: {exc}"
+            ) from exc
+
+        models = [entry["id"] for entry in catalog.get("models", []) if entry.get("id")]
+        default_model = catalog.get("default_model")
+        if not models:
+            raise ModelCatalogBootstrapError(
+                "Model catalog is empty after cache/OCI loading."
+            )
+        if not default_model or default_model not in models:
+            default_model = models[0]
+
+        logger.info(
+            "Model catalog loaded source=%s cache_age_hours=%s default_model=%s",
+            catalog.get("source", "unknown"),
+            f"{catalog.get('cache_age_hours'):.2f}" if isinstance(catalog.get("cache_age_hours"), (int, float)) else "n/a",
+            default_model,
+        )
+        return models, default_model
 
     def _setup_ui(self):
         """Set up the main UI."""
@@ -103,7 +153,7 @@ class SimplifiedTextToolsGUI:
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
         # if no text is passed cler out the app name
-        if len(self.args.text.strip()) == 0:
+        if not self.args.text or len(self.args.text.strip()) == 0:
             self.args.app = None 
             
         # Handle CLI args for tab selection and text population
@@ -250,8 +300,7 @@ class SimplifiedTextToolsGUI:
         ttk.Label(model_frame, text="LLM Model:").pack(side=tk.LEFT, padx=(0, 5))
 
         self.model_var = tk.StringVar()
-        settings = get_settings()
-        self.model_var.set(settings.oci.default_model)
+        self.model_var.set(self.initial_default_model)
 
         self.model_combo = ttk.Combobox(
             model_frame, textvariable=self.model_var,
@@ -418,7 +467,15 @@ class SimplifiedTextToolsGUI:
 def main():
     """Main entry point."""
     root = tk.Tk()
-    app = SimplifiedTextToolsGUI(root)
+    try:
+        app = SimplifiedTextToolsGUI(root)
+    except ModelCatalogBootstrapError as exc:
+        print(
+            f"[MODEL_CATALOG_BOOTSTRAP_ERROR] script={__file__} error={exc}",
+            file=sys.stderr,
+        )
+        root.destroy()
+        raise SystemExit(22)
 
     # Bring window to front
     root.lift()
