@@ -43,7 +43,6 @@ model_cache:
   directory: ".cache"
   filename: "oci_models_cache.json"
   refresh_hours: 24
-  preferred_default: "xai.grok-4-fast-non-reasoning"
 ```
 
 Behavior:
@@ -53,6 +52,9 @@ Behavior:
 3. If refresh fails and cache exists, use stale cache.
 4. If cache is missing, bootstrap from OCI and write cache.
 5. If cache is missing and OCI bootstrap fails, the Python app exits non-zero and Lua shows the error.
+
+Default model selection uses a single source: `oci.default_model` in `config.yaml`.
+The cache JSON stores model metadata only and does not persist a `default_model`.
 
 ## Standalone OCI list_models test
 

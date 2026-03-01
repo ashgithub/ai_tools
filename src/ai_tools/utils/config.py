@@ -75,7 +75,6 @@ class ModelCache(BaseModel, extra="forbid"):
     directory: str = Field(default=".cache")
     filename: str = Field(default="oci_models_cache.json")
     refresh_hours: int = Field(default=24)
-    preferred_default: str | None = Field(default=None)
 
 
 # --------------------------------------------------------------------------- #

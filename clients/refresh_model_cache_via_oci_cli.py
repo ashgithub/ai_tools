@@ -116,17 +116,6 @@ def _normalize_items(items: list[dict[str, Any]]) -> list[dict[str, str]]:
     return [deduped[k] for k in sorted(deduped.keys())]
 
 
-def _resolve_default(settings, models: list[dict[str, str]]) -> str:
-    ids = {m["id"] for m in models}
-    preferred = settings.model_cache.preferred_default
-    if preferred and preferred in ids:
-        return preferred
-    configured = settings.oci.default_model
-    if configured and configured in ids:
-        return configured
-    return models[0]["id"]
-
-
 def _write_cache_atomic(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
@@ -192,17 +181,14 @@ def main() -> int:
         models = _normalize_items(raw_items)
         if not models:
             raise RuntimeError("OCI CLI returned no allowed CHAT models (Llama/OpenAI/Grok)")
-        default_model = _resolve_default(settings, models)
         payload = {
             "schema_version": SCHEMA_VERSION,
             "last_refreshed_utc": _utc_now().isoformat().replace("+00:00", "Z"),
             "source": "oci_cli.list_models",
-            "default_model": default_model,
             "models": [
                 {
                     "id": m["id"],
                     "display_name": m["display_name"],
-                    "is_default": m["id"] == default_model,
                 }
                 for m in models
             ],

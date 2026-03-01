@@ -7,9 +7,17 @@ local refreshScriptPath = dir .. "/clients/refresh_model_cache_via_oci_cli.py"
 -- local scriptMode = "-m proof"
 local default_window_width = 900
 local default_window_height = 800
-local show_screen_debug_alert = true
+local show_screen_debug_alert = false
 local model_cache_path = dir .. "/.cache/oci_models_cache.json"
 local model_cache_refresh_hours = 24
+local status_alert_debounce_seconds = 0.25
+local last_status_at = 0
+local status_alert_durations = {
+    cache_refresh_start = 2.5,
+    cache_refresh_success = 2.0,
+    cache_refresh_fail = 4.0,
+    cancelled = 1.8,
+}
 
 local terminal_config = {  -- Shared config for terminal-like apps (iTerm2, Code)
     copy = function()
@@ -75,6 +83,106 @@ local app_configs = {
         end
     }
 }
+
+local status_messages = {
+    cache_refresh_start = "Updating AI models list for %s...",
+    cache_refresh_success = "AI models list updated for %s.",
+    cache_refresh_fail = "Could not update AI models list for %s.",
+    processing = "Processing message from %s...",
+    cancelled = "Cancelled in AI Tools for %s.",
+    error = "Error while processing %s: %s",
+}
+
+local status_sounds = {
+    slack = {
+        cache_refresh_start = "Submarine",
+        cache_refresh_success = "Glass",
+        cache_refresh_fail = "Basso",
+        processing = "Ping",
+        cancelled = "Tink",
+        error = "Sosumi",
+    },
+    iterm2 = {
+        cache_refresh_start = "Submarine",
+        cache_refresh_success = "Glass",
+        cache_refresh_fail = "Basso",
+        processing = "Bottle",
+        cancelled = "Tink",
+        error = "Sosumi",
+    },
+    code = {
+        cache_refresh_start = "Submarine",
+        cache_refresh_success = "Glass",
+        cache_refresh_fail = "Basso",
+        processing = "Bottle",
+        cancelled = "Tink",
+        error = "Sosumi",
+    },
+    default = {
+        cache_refresh_start = "Submarine",
+        cache_refresh_success = "Glass",
+        cache_refresh_fail = "Basso",
+        processing = "Bottle",
+        cancelled = "Tink",
+        error = "Sosumi",
+    }
+}
+
+local function normalize_app_bucket(app_name)
+    local lowered = (app_name or ""):lower()
+    if lowered:match("slack") then
+        return "slack"
+    end
+    if lowered:match("iterm2") then
+        return "iterm2"
+    end
+    if lowered:match("^code$") or lowered:match("visual studio code") then
+        return "code"
+    end
+    return "default"
+end
+
+local function play_status_sound(app_name, stage)
+    local bucket = normalize_app_bucket(app_name)
+    local bucket_sounds = status_sounds[bucket] or status_sounds.default
+    local sound_name = bucket_sounds[stage] or status_sounds.default[stage]
+    if not sound_name then
+        return
+    end
+    local sound = hs.sound.getByName(sound_name)
+    if sound then
+        sound:play()
+    end
+end
+
+local function show_status(stage, app_name, detail, is_error)
+    local template = status_messages[stage] or "%s"
+    local app_label = (app_name and app_name ~= "") and app_name or "current app"
+    local message
+    if stage == "error" then
+        message = string.format(template, app_label, detail or "Unknown error")
+    else
+        message = string.format(template, app_label)
+        if detail and detail ~= "" then
+            message = message .. " " .. detail
+        end
+    end
+
+    local now = hs.timer.secondsSinceEpoch()
+    if now - last_status_at < status_alert_debounce_seconds then
+        hs.timer.usleep(math.floor(status_alert_debounce_seconds * 1000000))
+    end
+    last_status_at = hs.timer.secondsSinceEpoch()
+
+    local duration = status_alert_durations[stage] or (is_error and 4 or 1.8)
+    hs.alert.show(message, duration)
+    play_status_sound(app_name, stage)
+    if is_error then
+        log.e(message)
+    else
+        log.i(message)
+    end
+end
 
 local function clamp(value, min_value, max_value)
     if value < min_value then
@@ -155,58 +263,64 @@ local function is_model_cache_stale()
     return age_hours >= model_cache_refresh_hours
 end
 
-local function ensure_model_cache()
+local function ensure_model_cache(app_name, on_complete)
     if not is_model_cache_stale() then
-        return true
+        on_complete(true)
+        return
     end
 
-    hs.alert.show("Refreshing model cache...", 1.5)
+    show_status("cache_refresh_start", app_name)
     local refresh_command = string.format(
         "cd %q && /opt/homebrew/bin/uv run %q 2>&1",
         dir, refreshScriptPath
     )
-    local output, ok, _, rc = hs.execute(refresh_command, true)
-    if not ok then
-        local error_text = (output or ""):gsub("%s+$", "")
-        local first_line = error_text:match("([^\n]+)") or "Unknown cache refresh error"
-        log.e("Model cache refresh failed script=" .. refreshScriptPath .. " exit=" .. tostring(rc))
-        log.e("refresh output:\n" .. (error_text ~= "" and error_text or "[No output]"))
-        hs.alert.show("Model cache refresh failed: " .. refreshScriptPath .. "\n" .. first_line, 4)
-        return false
-    end
-    return true
-end
 
-function processAppText()
-    local trigger_window = hs.window.focusedWindow()
-    local trigger_app = (trigger_window and trigger_window:application()) or hs.application.frontmostApplication()
-    local appName = trigger_app and trigger_app:name() or ""
-    local config = app_configs[appName] or app_configs["default"]
-    local scriptMode = string.format("--app %q", appName)
-    local windowArgs = build_window_args(trigger_window, trigger_app)
+    local refresh_task = hs.task.new(
+        "/bin/zsh",
+        function(exitCode, stdOut, stdErr)
+            local combined = (((stdOut or "") .. "\n" .. (stdErr or "")):gsub("^%s+", "")):gsub("%s+$", "")
+            if exitCode ~= 0 then
+                local first_line = combined:match("([^\n]+)") or "Unknown cache refresh error"
+                log.e("Model cache refresh failed script=" .. refreshScriptPath .. " exit=" .. tostring(exitCode))
+                log.e("refresh output:\n" .. (combined ~= "" and combined or "[No output]"))
+                show_status("cache_refresh_fail", app_name, nil, true)
+                show_status("error", app_name, first_line, true)
+                on_complete(false)
+                return
+            end
 
-    if not ensure_model_cache() then
+            show_status("cache_refresh_success", app_name)
+            hs.timer.doAfter(0.15, function()
+                on_complete(true)
+            end)
+        end,
+        { "-lc", refresh_command }
+    )
+
+    if not refresh_task then
+        show_status("cache_refresh_fail", app_name, nil, true)
+        show_status("error", app_name, "Could not start model cache refresh task.", true)
+        on_complete(false)
         return
     end
+    refresh_task:start()
+end
 
-    hs.alert.show("Processing selected text from " .. appName .. "...")
-
+local function run_processing(trigger_app, appName, config, scriptMode, windowArgs)
     -- Save original clipboard
     local originalClipboard = hs.pasteboard.getContents()
 
     -- Copy selected text
     config.copy()
-    hs.alert.show("text copied from " .. appName .. "...")
-    hs.sound.getByName("Funk"):play()
 
     local text = hs.pasteboard.getContents()
     if not text or text == "" then
-        hs.alert.show("No text was copied.")
-    --     return
+        show_status("error", appName, "No text was copied.", true)
+        return
     end
 
     if text:find("EOF") then
-        hs.alert.show("Text contains 'EOF'. Cannot safely use heredoc.")
+        show_status("error", appName, "Text contains EOF. Cannot safely use heredoc.", true)
         return
     end
 
@@ -214,7 +328,7 @@ function processAppText()
         "cd %s && /opt/homebrew/bin/uv run %s %s %s <<'EOF'\n%s\nEOF",
         dir, scriptPath, scriptMode, windowArgs, text
     )
-    hs.alert.show("Sending to AI Tools for processing...")
+    show_status("processing", appName)
 
     local task = hs.task.new("/bin/zsh",
         function(exitCode, stdOut, stdErr)
@@ -223,21 +337,24 @@ function processAppText()
             log.d("stdout:\n" .. (stdOut or "[No stdout]"))
             log.d("stderr:\n" .. (stdErr or "[No stderr]"))
 
+            if exitCode == nil then
+                show_status("cancelled", appName)
+                return
+            end
+
             if exitCode ~= 0 then
                 local stderr_text = (stdErr or ""):gsub("%s+$", "")
                 local first_line = stderr_text:match("([^\n]+)") or "Unknown error"
                 log.e("Model/tool execution failed script=" .. scriptPath)
                 log.e("stderr:\n" .. (stderr_text ~= "" and stderr_text or "[No stderr]"))
-                hs.alert.show("Model catalog init failed: " .. scriptPath .. "\n" .. first_line, 4)
+                show_status("error", appName, "Model/tool failed: " .. first_line, true)
                 return
             end
 
             if not stdOut or stdOut == "" then
-                hs.alert.show("Python script returned no output.")
+                show_status("cancelled", appName)
                 return
             end
-
-            hs.alert.show("Python script returned. Pasting output.")
 
             hs.pasteboard.setContents(stdOut)
 
@@ -247,8 +364,6 @@ function processAppText()
             hs.timer.usleep(200000)
 
             config.paste()
-            hs.alert.show("text pasted from " .. appName .. "...")
-            hs.sound.getByName("Funk"):play()
 
             -- Restore clipboard
             hs.timer.doAfter(0.5, function()
@@ -259,6 +374,24 @@ function processAppText()
     )
 
     task:start()
+end
+
+function processAppText()
+    local trigger_window = hs.window.focusedWindow()
+    local trigger_app = (trigger_window and trigger_window:application()) or hs.application.frontmostApplication()
+    local appName = trigger_app and trigger_app:name() or ""
+    local config = app_configs[appName] or app_configs["default"]
+    local scriptMode = string.format("--app %q", appName)
+    local windowArgs = build_window_args(trigger_window, trigger_app)
+
+    ensure_model_cache(appName, function(cache_ok)
+        if not cache_ok then
+            return
+        end
+        hs.timer.doAfter(0.2, function()
+            run_processing(trigger_app, appName, config, scriptMode, windowArgs)
+        end)
+    end)
 end
 
  function urlDecode(str)

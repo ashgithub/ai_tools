@@ -65,15 +65,10 @@ def _normalize_model_entries(raw_entries: list[dict[str, Any]]) -> list[dict[str
     return [deduped[k] for k in sorted(deduped.keys())]
 
 
-def _resolve_default_model(settings, models: list[dict[str, Any]], cached_default: str | None = None) -> str | None:
+def _resolve_default_model(settings, models: list[dict[str, Any]]) -> str | None:
     if not models:
         return None
     ids = {m["id"] for m in models}
-    if cached_default and cached_default in ids:
-        return cached_default
-    preferred = settings.model_cache.preferred_default
-    if preferred and preferred in ids:
-        return preferred
     configured = settings.oci.default_model
     if configured and configured in ids:
         return configured
@@ -110,11 +105,7 @@ def _read_cache(path: Path, settings) -> dict[str, Any] | None:
     if not normalized:
         return None
 
-    default_model = _resolve_default_model(
-        settings=settings,
-        models=normalized,
-        cached_default=payload.get("default_model"),
-    )
+    default_model = _resolve_default_model(settings=settings, models=normalized)
     if not default_model:
         return None
 

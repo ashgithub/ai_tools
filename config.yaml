@@ -15,16 +15,15 @@ model_cache:
   directory: ".cache"
   filename: "oci_models_cache.json"
   refresh_hours: 24
-  preferred_default: "xai.grok-4-fast-non-reasoning"
 
 # Prompts
 prompts:
   rewrite_allowed: |
     You CAN rewrite the text to improve clarity, structure, and effectiveness while maintaining the original meaning.
-    Make it more professional, clear, and well-structured.
+    Make it more professional, clear, and well-structured use appropriate formatting as needed. 
 
   rewrite_forbidden: |
-    You CANNOT rewrite the text - only fix typos, grammar, punctuation, and spelling errors.
+    You CANNOT rewrite the text - only fix typos, grammar, punctuation, and spelling errors and markdown formatting as needed.
     Do not change the wording, structure, or meaning - just correct errors.
 
   output_instruction: |
@@ -36,7 +35,7 @@ tab_prompts:
   Proofread:
     contexts:
       general: "You are a professional proofreader. Your task is to improve the following text."
-      slack: "Proofread this as a Slack message: keep it concise, friendly, professional, and use relevant emojis if appropriate."
+      slack: "Proofread this as a Slack message: keep it concise, friendly, professional, use appropriate slack compatible markdown to make it more readable. correct any formatting errors to improve readability and compy with slack markdown."
       email: "Proofread this as a business email: ensure a professional tone, proper structure, greeting, and closing."
   Explain: "Explain the following content in an easy to understand paragraph for a general audience:\n\nContent:\n{input}"
   Commands: "List 1 to 3 alternative command-line commands to accomplish the given task (no explanation, no comments). for {os} operating system.\n\nTask:\n{input}"
