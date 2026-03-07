@@ -7,7 +7,8 @@ import logging
 from pathlib import Path
 import re
 import subprocess
-from typing import Any, Literal
+import time
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, ValidationError
 
@@ -189,6 +190,32 @@ def _trace_lines_for_result(result: Any) -> list[str]:
     return lines
 
 
+def build_agent_prompt(request: AgentRequest) -> str:
+    nudge = str(request.options.get("nudge", "")).strip().lower()
+    nudge_prompt = str(request.options.get("nudge_prompt", "")).strip()
+    app_context = normalize_app_name(request.app_context)
+
+    prompt_parts = [request.input_text.strip()]
+    if nudge_prompt:
+        prompt_parts.append(f"Task nudge: {nudge_prompt}")
+    if nudge:
+        prompt_parts.append(f"Nudge: {nudge}")
+    if app_context:
+        prompt_parts.append(f"App context: {app_context}")
+    return "\n\n".join(part for part in prompt_parts if part)
+
+
+def build_agent_payload(prompt: str) -> dict[str, Any]:
+    return {
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ]
+    }
+
+
 class DeepAgentRuntime:
     """Runtime wrapper that executes agentic Deep Agents with shared schemas."""
 
@@ -196,7 +223,7 @@ class DeepAgentRuntime:
         self.settings = settings
         self.project_root = project_root or Path(__file__).resolve().parents[3]
         self.skills_root = self.project_root / "skills"
-        self.agents_memory_path = self.project_root / "AGENTS.md"
+        self.agents_memory_path = self.skills_root/ "AGENTS.md"
         self.skills = discover_skills(self.skills_root)
         self._last_deep_agent_trace: list[str] = []
         self._validate_global_memory()
@@ -211,6 +238,45 @@ class DeepAgentRuntime:
                 code="SKILL_NOT_FOUND",
                 message=f"Missing AGENTS.md at {self.agents_memory_path}",
             )
+
+    def _relative_project_path(self, path: Path) -> str:
+        try:
+            return str(path.resolve().relative_to(self.project_root.resolve()))
+        except ValueError:
+            return str(path)
+
+    def create_agent(self, request: AgentRequest, schema_model: type[BaseModel], *, debug: bool = False) -> Any:
+        try:
+            from deepagents import create_deep_agent  # pyright: ignore[reportMissingImports]
+            from deepagents.backends import FilesystemBackend  # pyright: ignore[reportMissingImports]
+        except Exception as exc:
+            raise SkillExecutionError(
+                code="SKILL_EXECUTION_FAILED",
+                message=(
+                    "deepagents is not installed or import failed. "
+                    "Install deepagents to execute skill runtime. "
+                    f"Import error: {exc}"
+                ),
+            ) from exc
+
+        model_name = request.selected_model or self.settings.oci.default_model
+        model = OCIOpenAIHelper.get_client(
+            model_name=model_name,
+            config=self.settings.model_dump(),
+        )
+
+        memory_paths = [self._relative_project_path(self.agents_memory_path)]
+        skill_paths = [self._relative_project_path(self.skills_root)]
+        create_kwargs: dict[str, Any] = {
+            "model": model,
+            "backend": FilesystemBackend(root_dir=self.project_root, virtual_mode=False),
+            "memory": memory_paths,
+            "skills": skill_paths,
+            "response_format": schema_model,
+        }
+        if debug:
+            create_kwargs["debug"] = True
+        return create_deep_agent(**create_kwargs)
 
     def _schema_for_request(self, request: AgentRequest) -> tuple[type[BaseModel], RenderKind]:
         family = resolve_schema_family(request)
@@ -418,59 +484,94 @@ class DeepAgentRuntime:
                 message=f"Structured response validation failed: {exc}",
             ) from exc
 
-    def _execute_deep_agent(self, request: AgentRequest, schema_model: type[BaseModel]) -> dict[str, Any]:
+    def invoke_streamed(
+        self,
+        request: AgentRequest,
+        schema_model: type[BaseModel],
+        *,
+        timeout_seconds: int = 30,
+        max_events: int = 200,
+        diagnostics_callback: Callable[[list[str]], None] | None = None,
+    ) -> dict[str, Any]:
+        def _event_payload(event: Any) -> Any:
+            if isinstance(event, tuple) and len(event) >= 2:
+                return event[1]
+            return event
+
+        def _trace_lines_for_event(event: Any) -> list[str]:
+            payload = _event_payload(event)
+            lines = _trace_lines_for_result(payload)
+            if lines != ["[trace] messages -> none"]:
+                return lines
+            return _trace_message_lines(payload)
+
         self._last_deep_agent_trace = []
-        try:
-            from deepagents import create_deep_agent
-            from deepagents.backends import FilesystemBackend
-        except Exception as exc:
-            raise SkillExecutionError(
-                code="SKILL_EXECUTION_FAILED",
-                message=(
-                    "deepagents is not installed or import failed. "
-                    "Install deepagents to execute skill runtime. "
-                    f"Import error: {exc}"
-                ),
-            ) from exc
-
-        model_name = request.selected_model or self.settings.oci.default_model
-        model = OCIOpenAIHelper.get_client(
-            model_name=model_name,
-            config=self.settings.model_dump(),
-        )
-
-        nudge = str(request.options.get("nudge", "")).strip()
-        nudge_prompt = str(request.options.get("nudge_prompt", "")).strip()
-        app_context = str(request.app_context or "").strip()
-        prompt_parts = [request.input_text.strip()]
-        if nudge_prompt:
-            prompt_parts.append(f"Task nudge: {nudge_prompt}")
-        if nudge:
-            prompt_parts.append(f"Nudge: {nudge}")
-        if app_context:
-            prompt_parts.append(f"App context: {app_context}")
-        prompt = "\n\n".join(p for p in prompt_parts if p)
+        prompt = build_agent_prompt(request)
+        payload = build_agent_payload(prompt)
+        started_at = time.time()
+        events_seen = 0
 
         try:
             self._last_deep_agent_trace.append("[trace] deep_agent_create -> create_deep_agent")
-            response_format: Any = schema_model
-            agent = create_deep_agent(
-                model=model,
-                backend=FilesystemBackend(root_dir=self.project_root, virtual_mode=False),
-                memory=["AGENTS.md"],
-                skills=["skills"],
-                response_format=response_format,
+            agent = self.create_agent(request, schema_model, debug=True)
+            try:
+                stream_iter = agent.stream(payload, stream_mode="values")
+            except TypeError:
+                stream_iter = agent.stream(payload)
+
+            for event in stream_iter:
+                if time.time() - started_at > timeout_seconds:
+                    raise SkillExecutionError(
+                        code="SKILL_EXECUTION_FAILED",
+                        message="Stream aborted: timeout exceeded",
+                    )
+
+                events_seen += 1
+                if events_seen > max_events:
+                    raise SkillExecutionError(
+                        code="SKILL_EXECUTION_FAILED",
+                        message="Stream aborted: max-events exceeded",
+                    )
+
+                self._last_deep_agent_trace.extend(_trace_lines_for_event(event))
+                if diagnostics_callback is not None:
+                    diagnostics_callback(list(self._last_deep_agent_trace))
+
+                try:
+                    structured = self._extract_structured_response(_event_payload(event), schema_model)
+                except SkillExecutionError as exc:
+                    if "missing structured_response" in exc.message:
+                        if time.time() - started_at > timeout_seconds:
+                            raise SkillExecutionError(
+                                code="SKILL_EXECUTION_FAILED",
+                                message="Stream aborted: timeout exceeded",
+                            ) from exc
+                        continue
+                    raise
+                return structured
+
+            raise SkillExecutionError(
+                code="SKILL_EXECUTION_FAILED",
+                message="Stream aborted: max-events exceeded",
             )
-            result = agent.invoke(
-                {
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": prompt,
-                        }
-                    ]
-                }
-            )
+        except AgentRuntimeError:
+            raise
+        except Exception as exc:
+            logger.exception("Deep agent streamed runtime exception")
+            raise SkillExecutionError(
+                code="SKILL_EXECUTION_FAILED",
+                message=f"Deep agent streamed invocation failed: {exc}",
+            ) from exc
+
+    def _execute_deep_agent(self, request: AgentRequest, schema_model: type[BaseModel]) -> dict[str, Any]:
+        self._last_deep_agent_trace = []
+        prompt = build_agent_prompt(request)
+        payload = build_agent_payload(prompt)
+
+        try:
+            self._last_deep_agent_trace.append("[trace] deep_agent_create -> create_deep_agent")
+            agent = self.create_agent(request, schema_model)
+            result = agent.invoke(payload)
 
             self._last_deep_agent_trace.extend(_trace_lines_for_result(result))
             return self._extract_structured_response(result, schema_model)
