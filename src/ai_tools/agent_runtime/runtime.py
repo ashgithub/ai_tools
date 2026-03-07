@@ -484,6 +484,33 @@ class DeepAgentRuntime:
                 message=f"Structured response validation failed: {exc}",
             ) from exc
 
+    @staticmethod
+    def _event_payload(event: Any) -> Any:
+        if isinstance(event, tuple) and len(event) >= 2:
+            return event[1]
+        return event
+
+    @classmethod
+    def normalize_stream_event(cls, event: Any) -> tuple[str, Any]:
+        if isinstance(event, tuple) and len(event) >= 2:
+            return str(event[0]), cls._event_payload(event)
+        return "values", cls._event_payload(event)
+
+    @classmethod
+    def stream_event_to_trace_lines(cls, event: Any) -> list[str]:
+        mode, payload = cls.normalize_stream_event(event)
+        lines = _trace_lines_for_result(payload)
+        if lines == ["[trace] messages -> none"]:
+            lines = _trace_message_lines(payload)
+        if not lines:
+            lines = ["[trace] messages -> none"]
+        return [f"[trace] stream_mode -> {mode}", *lines]
+
+    @classmethod
+    def normalize_and_trace_event(cls, event: Any) -> tuple[str, Any, list[str]]:
+        mode, payload = cls.normalize_stream_event(event)
+        return mode, payload, cls.stream_event_to_trace_lines((mode, payload))
+
     def invoke_streamed(
         self,
         request: AgentRequest,
@@ -493,18 +520,6 @@ class DeepAgentRuntime:
         max_events: int = 200,
         diagnostics_callback: Callable[[list[str]], None] | None = None,
     ) -> dict[str, Any]:
-        def _event_payload(event: Any) -> Any:
-            if isinstance(event, tuple) and len(event) >= 2:
-                return event[1]
-            return event
-
-        def _trace_lines_for_event(event: Any) -> list[str]:
-            payload = _event_payload(event)
-            lines = _trace_lines_for_result(payload)
-            if lines != ["[trace] messages -> none"]:
-                return lines
-            return _trace_message_lines(payload)
-
         self._last_deep_agent_trace = []
         prompt = build_agent_prompt(request)
         payload = build_agent_payload(prompt)
@@ -533,12 +548,13 @@ class DeepAgentRuntime:
                         message="Stream aborted: max-events exceeded",
                     )
 
-                self._last_deep_agent_trace.extend(_trace_lines_for_event(event))
+                _mode, normalized_payload, event_trace_lines = self.normalize_and_trace_event(event)
+                self._last_deep_agent_trace.extend(event_trace_lines)
                 if diagnostics_callback is not None:
-                    diagnostics_callback(list(self._last_deep_agent_trace))
+                    diagnostics_callback(list(event_trace_lines))
 
                 try:
-                    structured = self._extract_structured_response(_event_payload(event), schema_model)
+                    structured = self._extract_structured_response(normalized_payload, schema_model)
                 except SkillExecutionError as exc:
                     if "missing structured_response" in exc.message:
                         if time.time() - started_at > timeout_seconds:

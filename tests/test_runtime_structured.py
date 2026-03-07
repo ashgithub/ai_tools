@@ -237,4 +237,6 @@ def test_bounded_stream_success(monkeypatch, runtime):
 
     assert result == {"text": "ok"}
     assert diagnostics_calls
-    assert any(lines for lines in diagnostics_calls if any(line.startswith("[trace]") for line in lines))
+    assert all(lines for lines in diagnostics_calls)
+    assert any("[trace] stream_mode -> values" in line for lines in diagnostics_calls for line in lines)
+    assert any("[trace] human -> hello" in line for lines in diagnostics_calls for line in lines)
