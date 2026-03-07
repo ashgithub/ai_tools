@@ -29,5 +29,5 @@ Task:
 
 Output requirements:
 - Return structured output with:
-  - corrected: minimally corrected source text fixing grammer & typos
+  - corrected: minimally corrected source text fixing grammar and typos
   - rewritten: the improved final text that keeps the original intent but is rewritten for better impact

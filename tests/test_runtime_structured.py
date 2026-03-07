@@ -80,7 +80,8 @@ def test_runtime_invokes_with_all_skills_and_memory(monkeypatch):
     backend = captured.get("backend")
     assert backend is not None
     assert "FilesystemBackend" in backend.__class__.__name__
-    assert captured.get("response_format").__name__ == "SingleText"
+    response_format = captured.get("response_format")
+    assert getattr(response_format, "__name__", "") == "SingleText"
     payload = invoked.get("payload")
     assert isinstance(payload, dict)
     messages = payload.get("messages")
@@ -111,3 +112,56 @@ def test_schema_validation_failure_is_fail_fast(monkeypatch):
         runtime.invoke(req)
 
     assert exc.value.code == "SKILL_EXECUTION_FAILED"
+
+
+def test_runtime_collects_trace_lines_from_agent_messages(monkeypatch):
+    runtime = DeepAgentRuntime(get_settings(), project_root=PROJECT_ROOT)
+    req = AgentRequest(input_text="hello", ui_tab="universal", options={"nudge": "ask"})
+
+    def _fake_create_deep_agent(**_kwargs):
+        return _FakeAgent(
+            {
+                "structured_response": {"text": "ok"},
+                "messages": [
+                    {"type": "human", "content": "hello"},
+                    {
+                        "type": "ai",
+                        "content": "I will use tools.",
+                        "tool_calls": [
+                            {
+                                "name": "read_file",
+                                "args": {"file_path": "/tmp/skills/ask/SKILL.md"},
+                            },
+                            {
+                                "name": "task",
+                                "args": {"description": "delegate"},
+                            },
+                        ],
+                    },
+                    {
+                        "type": "tool",
+                        "name": "read_file",
+                        "args": {"file_path": "/tmp/skills/ask/SKILL.md"},
+                        "content": "name: ask",
+                    },
+                ],
+            }
+        )
+
+    class _FakeFilesystemBackend:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    fake_module = types.SimpleNamespace(create_deep_agent=_fake_create_deep_agent)
+    fake_backends_module = types.SimpleNamespace(FilesystemBackend=_FakeFilesystemBackend)
+    monkeypatch.setitem(__import__("sys").modules, "deepagents", fake_module)
+    monkeypatch.setitem(__import__("sys").modules, "deepagents.backends", fake_backends_module)
+    monkeypatch.setattr(OCIOpenAIHelper, "get_client", staticmethod(lambda model_name, config: object()))
+
+    response = runtime.invoke(req)
+
+    assert response.primary_output == "ok"
+    assert any(line == "schema=SingleText" for line in response.trace)
+    assert any("[trace] tool_call -> read_file" in line for line in response.trace)
+    assert any("[trace] skill_load -> ask" in line for line in response.trace)
+    assert any("[trace] subagent_call -> task" in line for line in response.trace)

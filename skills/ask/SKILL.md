@@ -6,7 +6,7 @@ inputs:
     required: true
     type: string
 outputs:
-  output_text:
+  text:
     type: string
     description: Accurate concise answer.
 model_policy:
@@ -23,4 +23,4 @@ Task:
 - If uncertain, say what is uncertain.
 
 Output requirements:
-- Return the answer directly without extra preamble.
+- Return the answer directly in the `text` field without extra preamble.

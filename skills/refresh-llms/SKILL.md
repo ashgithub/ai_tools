@@ -9,7 +9,7 @@ inputs:
     required: true
     type: string
 outputs:
-  output_text:
+  text:
     type: string
     description: Refresh status message.
 model_policy:

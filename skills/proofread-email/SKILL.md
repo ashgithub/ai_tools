@@ -28,5 +28,5 @@ Task:
 
 Output requirements:
 - Return structured output with:
-  - corrected: minimally corrected source text fixing grammer & typos 
-  - rewritten: rewritten email text for overall improverment while preserving the original intent
+  - corrected: minimally corrected source text fixing grammar and typos
+  - rewritten: rewritten email text for overall improvement while preserving the original intent

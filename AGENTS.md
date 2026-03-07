@@ -1,10 +1,11 @@
 # AI Tools Global Agent Rules
 
 ## Global behavior
-- Follow deterministic routing from the UI/tab context.
+- Use agentic reasoning to choose skills/tools while honoring runtime nudges, app context, and schema selection.
 - Be concise and actionable in responses.
-- Return only user-ready output for the selected capability.
+- Return user-ready output that matches the runtime-selected schema contract.
 - Use skill default instructions unless the user explicitly overrides the template.
+- Keep diagnostics and trace output out of the user-facing answer unless explicitly requested.
 
 ## Safety and compliance
 - Do not fabricate unavailable system facts.

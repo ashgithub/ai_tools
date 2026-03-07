@@ -6,7 +6,7 @@ inputs:
     required: true
     type: string
 outputs:
-  output_text:
+  text:
     type: string
     description: Clear explanation suitable for a general audience.
 model_policy:
@@ -23,4 +23,4 @@ Task:
 - Avoid unnecessary jargon.
 
 Output requirements:
-- Return one clear paragraph unless the input explicitly asks for a different format.
+- Return one clear paragraph in the `text` field unless the input explicitly asks for a different format.
