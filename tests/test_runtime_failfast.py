@@ -75,6 +75,9 @@ def test_no_invoke_fallback(monkeypatch, runtime):
     monkeypatch.setattr(OCIOpenAIHelper, "get_client", staticmethod(lambda model_name, config: object()))
 
     with pytest.raises(SkillExecutionError, match="max-events exceeded") as exc:
+        # ensure that when max_events is 0 we immediately fail
+    with pytest.raises(SkillExecutionError, match="max-events exceeded") as exc2:
+        runtime.invoke_streamed(req, runtime._schema_for_request(req)[0], max_events=0)
         runtime.invoke_streamed(req, runtime._schema_for_request(req)[0], max_events=2)
 
     assert exc.value.code == "SKILL_EXECUTION_FAILED"
