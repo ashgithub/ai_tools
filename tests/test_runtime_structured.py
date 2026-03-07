@@ -240,3 +240,41 @@ def test_bounded_stream_success(monkeypatch, runtime):
     assert all(lines for lines in diagnostics_calls)
     assert any("[trace] stream_mode -> values" in line for lines in diagnostics_calls for line in lines)
     assert any("[trace] human -> hello" in line for lines in diagnostics_calls for line in lines)
+
+
+
+def test_bounded_stream_success_first_event(monkeypatch, runtime):
+    req = AgentRequest(input_text="hello", ui_tab="universal", options={"nudge": "ask", "nudge_prompt": "Answer directly."})
+    diagnostics_calls: list[list[str]] = []
+
+    class _StreamingAgent:
+        def stream(self, _payload, stream_mode="values"):
+            assert stream_mode == "values"
+            yield {
+                "messages": [{"type": "ai", "content": "done immediately"}],
+                "structured_response": {"text": "ok"},
+            }
+
+    def _fake_create_deep_agent(**_kwargs):
+        return _StreamingAgent()
+
+    class _FakeFilesystemBackend:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    fake_module = types.SimpleNamespace(create_deep_agent=_fake_create_deep_agent)
+    fake_backends_module = types.SimpleNamespace(FilesystemBackend=_FakeFilesystemBackend)
+    monkeypatch.setitem(__import__("sys").modules, "deepagents", fake_module)
+    monkeypatch.setitem(__import__("sys").modules, "deepagents.backends", fake_backends_module)
+    monkeypatch.setattr(OCIOpenAIHelper, "get_client", staticmethod(lambda model_name, config: object()))
+
+    result = runtime.invoke_streamed(
+        req,
+        schema_model=runtime._schema_for_request(req)[0],
+        diagnostics_callback=lambda lines: diagnostics_calls.append(lines),
+    )
+
+    assert result == {"text": "ok"}
+    assert len(diagnostics_calls) == 1
+    assert any("[trace] stream_mode -> values" in line for line in diagnostics_calls[0])
+    assert any("[trace] ai -> done immediately" in line for line in diagnostics_calls[0])

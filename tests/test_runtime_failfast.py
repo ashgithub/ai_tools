@@ -75,12 +75,94 @@ def test_no_invoke_fallback(monkeypatch, runtime):
     monkeypatch.setattr(OCIOpenAIHelper, "get_client", staticmethod(lambda model_name, config: object()))
 
     with pytest.raises(SkillExecutionError, match="max-events exceeded") as exc:
-        # ensure that when max_events is 0 we immediately fail
-    with pytest.raises(SkillExecutionError, match="max-events exceeded") as exc2:
-        runtime.invoke_streamed(req, runtime._schema_for_request(req)[0], max_events=0)
         runtime.invoke_streamed(req, runtime._schema_for_request(req)[0], max_events=2)
 
     assert exc.value.code == "SKILL_EXECUTION_FAILED"
+
+
+def test_max_events_zero(monkeypatch, runtime):
+    req = AgentRequest(input_text="hello", ui_tab="universal", options={"nudge": "ask", "nudge_prompt": "Answer directly."})
+    diagnostics_calls: list[list[str]] = []
+
+    class _StreamingAgent:
+        def stream(self, _payload, stream_mode="values"):
+            assert stream_mode == "values"
+            yield {"messages": [{"type": "ai", "content": "first event"}]}
+
+    def _fake_create_deep_agent(**_kwargs):
+        return _StreamingAgent()
+
+    class _FakeFilesystemBackend:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    fake_module = types.SimpleNamespace(create_deep_agent=_fake_create_deep_agent)
+    fake_backends_module = types.SimpleNamespace(FilesystemBackend=_FakeFilesystemBackend)
+    monkeypatch.setitem(__import__("sys").modules, "deepagents", fake_module)
+    monkeypatch.setitem(__import__("sys").modules, "deepagents.backends", fake_backends_module)
+    monkeypatch.setattr(OCIOpenAIHelper, "get_client", staticmethod(lambda model_name, config: object()))
+
+    with pytest.raises(SkillExecutionError, match="max-events exceeded") as exc:
+        runtime.invoke_streamed(
+            req,
+            runtime._schema_for_request(req)[0],
+            max_events=0,
+            diagnostics_callback=lambda lines: diagnostics_calls.append(lines),
+        )
+
+    assert exc.value.code == "SKILL_EXECUTION_FAILED"
+    assert diagnostics_calls == []
+
+
+def test_max_events_equal_boundary(monkeypatch, runtime):
+    req = AgentRequest(input_text="hello", ui_tab="universal", options={"nudge": "ask", "nudge_prompt": "Answer directly."})
+    boundary = 3
+
+    class _StreamingAgent:
+        def stream(self, _payload, stream_mode="values"):
+            assert stream_mode == "values"
+            yield {"messages": [{"type": "ai", "content": "step 1"}]}
+            yield {"messages": [{"type": "ai", "content": "step 2"}]}
+            yield {
+                "messages": [{"type": "ai", "content": "done"}],
+                "structured_response": {"text": "ok"},
+            }
+
+    def _fake_create_deep_agent(**_kwargs):
+        return _StreamingAgent()
+
+    class _FakeFilesystemBackend:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    fake_module = types.SimpleNamespace(create_deep_agent=_fake_create_deep_agent)
+    fake_backends_module = types.SimpleNamespace(FilesystemBackend=_FakeFilesystemBackend)
+    monkeypatch.setitem(__import__("sys").modules, "deepagents", fake_module)
+    monkeypatch.setitem(__import__("sys").modules, "deepagents.backends", fake_backends_module)
+    monkeypatch.setattr(OCIOpenAIHelper, "get_client", staticmethod(lambda model_name, config: object()))
+
+    success_diagnostics: list[list[str]] = []
+    result = runtime.invoke_streamed(
+        req,
+        runtime._schema_for_request(req)[0],
+        max_events=boundary,
+        diagnostics_callback=lambda lines: success_diagnostics.append(lines),
+    )
+    assert result == {"text": "ok"}
+    assert len(success_diagnostics) == boundary
+    assert any("[trace] ai -> done" in line for lines in success_diagnostics for line in lines)
+
+    failure_diagnostics: list[list[str]] = []
+    with pytest.raises(SkillExecutionError, match="max-events exceeded") as exc:
+        runtime.invoke_streamed(
+            req,
+            runtime._schema_for_request(req)[0],
+            max_events=boundary - 1,
+            diagnostics_callback=lambda lines: failure_diagnostics.append(lines),
+        )
+
+    assert exc.value.code == "SKILL_EXECUTION_FAILED"
+    assert len(failure_diagnostics) == boundary - 1
 
 
 def test_timeout_fails(monkeypatch, runtime):

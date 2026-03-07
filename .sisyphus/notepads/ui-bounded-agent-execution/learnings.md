@@ -1,2 +1,3 @@
 
-18: - Added tests for max_events boundary cases: immediate success if first event contains structured_response; max_events==0 triggers immediate failure.
+19: - Added deterministic max-events boundary tests (zero, equal boundary) to ensure behavior is consistent.
+- Added deterministic invoke_streamed max-events boundary tests for first-event success, zero-event failure, and equal-boundary behavior with diagnostics callbacks.
