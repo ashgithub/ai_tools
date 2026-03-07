@@ -8,6 +8,7 @@ from clients.multi_tool_client import (
     format_diagnostics_trace,
 )
 from ai_tools.agent_runtime import AgentResponse
+from ai_tools.agent_runtime.errors import SkillExecutionError
 
 
 class _FakeAfterRoot:
@@ -137,5 +138,117 @@ def test_client_final_result_callback(monkeypatch):
     assert response.trace == ["[trace] final result"]
     assert any(update.startswith("Response ready (") for update in status_updates)
     assert busy_updates == [True, False]
+    assert root.calls
+    assert all(delay == 0 for delay, _ in root.calls)
+
+
+def _configure_failure_gui(gui: UniversalTextToolsGUI):
+    gui.agent_runtime = cast(Any, types.SimpleNamespace(
+        preview_execution_summary=lambda _request: "summary",
+        _schema_for_request=lambda _request: (object(), "single_text"),
+        _primary_output=lambda _render_kind, structured: structured["text"],
+        _last_deep_agent_trace=["[trace] retained"],
+    ))
+    gui._build_request = lambda text: cast(Any, types.SimpleNamespace(selected_model="demo-model", input_text=text))
+    gui.input_text = cast(Any, types.SimpleNamespace(get=lambda *_args: "prompt"))
+    gui.run_button = cast(Any, types.SimpleNamespace(config=lambda **_kwargs: None))
+    gui.done_button = cast(Any, types.SimpleNamespace(config=lambda **_kwargs: None))
+    gui.refresh_button = cast(Any, types.SimpleNamespace(config=lambda **_kwargs: None))
+    gui.model_combo = cast(Any, types.SimpleNamespace(config=lambda **_kwargs: None))
+    gui.nudge_combo = cast(Any, types.SimpleNamespace(config=lambda **_kwargs: None))
+
+
+def test_client_handles_timeout_failure(monkeypatch):
+    gui, root = _make_gui()
+    _configure_failure_gui(gui)
+
+    status_updates: list[str] = []
+    busy_updates: list[bool] = []
+    diagnostics_calls: list[list[str]] = []
+    error_calls: list[tuple[str, str]] = []
+
+    gui.status_var = cast(Any, types.SimpleNamespace(set=lambda value: status_updates.append(value)))
+    gui._set_busy = lambda busy: busy_updates.append(busy)
+    gui._render_summary = lambda summary: None
+    gui._render_diagnostics = lambda trace_lines: diagnostics_calls.append(list(trace_lines or []))
+    gui._display_result = lambda response: None
+
+    def fake_showerror(title: str, message: str):
+        error_calls.append((title, message))
+
+    def fake_invoke_streamed(request: Any, schema_model: Any, **kwargs: Any):
+        kwargs["diagnostics_callback"](["[trace] partial diagnostics"])
+        raise SkillExecutionError(
+            code="SKILL_EXECUTION_FAILED",
+            message="Stream aborted: timeout exceeded",
+        )
+
+    gui.agent_runtime.invoke_streamed = fake_invoke_streamed
+
+    class _ImmediateThread:
+        def __init__(self, *, target: Any, daemon: Any):
+            self.target = target
+            self.daemon = daemon
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr("clients.multi_tool_client.threading.Thread", _ImmediateThread)
+    monkeypatch.setattr("clients.multi_tool_client.messagebox.showerror", fake_showerror)
+
+    gui._run_action()
+
+    assert diagnostics_calls == [["[trace] request queued"], ["[trace] partial diagnostics"]]
+    assert busy_updates == [True, False]
+    assert any("timeout" in update.lower() for update in status_updates)
+    assert error_calls == [("Error", "SKILL_EXECUTION_FAILED: Stream aborted: timeout exceeded")]
+    assert root.calls
+    assert all(delay == 0 for delay, _ in root.calls)
+
+
+def test_client_handles_max_events_failure(monkeypatch):
+    gui, root = _make_gui()
+    _configure_failure_gui(gui)
+
+    status_updates: list[str] = []
+    busy_updates: list[bool] = []
+    diagnostics_calls: list[list[str]] = []
+    error_calls: list[tuple[str, str]] = []
+
+    gui.status_var = cast(Any, types.SimpleNamespace(set=lambda value: status_updates.append(value)))
+    gui._set_busy = lambda busy: busy_updates.append(busy)
+    gui._render_summary = lambda summary: None
+    gui._render_diagnostics = lambda trace_lines: diagnostics_calls.append(list(trace_lines or []))
+    gui._display_result = lambda response: None
+
+    def fake_showerror(title: str, message: str):
+        error_calls.append((title, message))
+
+    def fake_invoke_streamed(request: Any, schema_model: Any, **kwargs: Any):
+        kwargs["diagnostics_callback"](["[trace] partial diagnostics"])
+        raise SkillExecutionError(
+            code="SKILL_EXECUTION_FAILED",
+            message="Stream aborted: max-events exceeded",
+        )
+
+    gui.agent_runtime.invoke_streamed = fake_invoke_streamed
+
+    class _ImmediateThread:
+        def __init__(self, *, target: Any, daemon: Any):
+            self.target = target
+            self.daemon = daemon
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr("clients.multi_tool_client.threading.Thread", _ImmediateThread)
+    monkeypatch.setattr("clients.multi_tool_client.messagebox.showerror", fake_showerror)
+
+    gui._run_action()
+
+    assert diagnostics_calls == [["[trace] request queued"], ["[trace] partial diagnostics"]]
+    assert busy_updates == [True, False]
+    assert any("max-events" in update.lower() for update in status_updates)
+    assert error_calls == [("Error", "SKILL_EXECUTION_FAILED: Stream aborted: max-events exceeded")]
     assert root.calls
     assert all(delay == 0 for delay, _ in root.calls)
