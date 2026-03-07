@@ -20,6 +20,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+def format_diagnostics_trace(trace_lines: list[str] | None) -> str:
+    if not trace_lines:
+        return "No diagnostics captured for this run."
+    return "\n".join(str(line) for line in trace_lines)
+
+
 class UniversalTextToolsGUI:
     """Single-workspace GUI for agentic deep agent workflows."""
 
@@ -42,6 +48,15 @@ class UniversalTextToolsGUI:
         self.selected_alternative = tk.StringVar()
         self.selected_text_pair = tk.StringVar()
         self.is_busy = False
+
+        self.model_var: Any = None
+        self.model_combo: Any = None
+        self.refresh_button: Any = None
+        self.nudge_var: Any = None
+        self.nudge_combo: Any = None
+        self.app_var: Any = None
+        self.app_entry: Any = None
+        self.nudge_help: Any = None
 
         self._setup_ui()
         self._bind_shortcuts()
@@ -148,6 +163,14 @@ class UniversalTextToolsGUI:
         self.summary_text = scrolledtext.ScrolledText(self.results_notebook, height=10, wrap=tk.WORD, state="disabled")
         self.results_notebook.add(self.summary_text, text="Execution Summary")
 
+        self.diagnostics_text = scrolledtext.ScrolledText(
+            self.results_notebook,
+            height=10,
+            wrap=tk.WORD,
+            state="disabled",
+        )
+        self.results_notebook.add(self.diagnostics_text, text="Diagnostics")
+
         action_row = ttk.Frame(body)
         action_row.pack(fill=tk.X, pady=(8, 0))
 
@@ -247,6 +270,12 @@ class UniversalTextToolsGUI:
         self.summary_text.insert("1.0", summary)
         self.summary_text.config(state="disabled")
 
+    def _render_diagnostics(self, trace_lines: list[str] | None):
+        self.diagnostics_text.config(state="normal")
+        self.diagnostics_text.delete("1.0", tk.END)
+        self.diagnostics_text.insert("1.0", format_diagnostics_trace(trace_lines))
+        self.diagnostics_text.config(state="disabled")
+
     def _run_action(self):
         if self.is_busy:
             return
@@ -257,6 +286,7 @@ class UniversalTextToolsGUI:
 
         request = self._build_request(text)
         self._render_summary(self.agent_runtime.preview_execution_summary(request))
+        self._render_diagnostics(["[trace] request queued"])
         self.status_var.set("Processing request...")
         self._set_busy(True)
 
@@ -282,6 +312,7 @@ class UniversalTextToolsGUI:
         if self.is_busy:
             return
         self.status_var.set("Refreshing models...")
+        self._render_diagnostics(["[trace] refresh request queued"])
         self._set_busy(True)
 
         def worker():
@@ -393,6 +424,7 @@ class UniversalTextToolsGUI:
 
         if response.execution_summary:
             self._render_summary(response.execution_summary)
+        self._render_diagnostics(response.trace)
         self.results_notebook.select(0)
 
     def _copy_output(self):

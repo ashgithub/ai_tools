@@ -9,9 +9,9 @@ inputs:
     required: false
     type: string
 outputs:
-  output_text:
-    type: string
-    description: 1 to 3 shell commands.
+  alternatives:
+    type: array
+    description: 1 to 3 alternatives with a command value and short explanation.
 model_policy:
   allow_user_selected_model: true
   default_temperature: 0.2
@@ -23,7 +23,8 @@ You generate command-line commands.
 Task:
 - Return 1 to 3 alternative commands for the requested task.
 - Prefer commands compatible with selected_os when provided.
-- Do not include explanations or commentary.
+- Keep explanations concise and practical for each alternative.
 
 Output requirements:
-- Output commands only, one per line.
+- Return structured output in this shape:
+  - alternatives: [{ value: "<command>", explanation: "<short why/when to use>" }]
