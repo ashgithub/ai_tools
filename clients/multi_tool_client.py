@@ -12,12 +12,15 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 from typing import Any, Optional
 
-from ai_tools.agent_runtime import AgentRuntimeError, AgentRequest, DeepAgentRuntime
+from ai_tools.agent_runtime import AgentRuntimeError, AgentRequest, AgentResponse, DeepAgentRuntime
 from ai_tools.utils.config import get_settings
 from ai_tools.utils.model_cache import ModelCatalogBootstrapError, get_cached_or_refreshed_models
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+GUI_STREAM_TIMEOUT_SECONDS = 30
+GUI_STREAM_MAX_EVENTS = 200
 
 
 def format_diagnostics_trace(trace_lines: list[str] | None) -> str:
@@ -293,9 +296,31 @@ class UniversalTextToolsGUI:
         def worker():
             started = time.time()
             try:
-                response = self.agent_runtime.invoke(request)
+                schema_model, render_kind = self.agent_runtime._schema_for_request(request)
+
+                def schedule_diagnostics(lines: list[str]):
+                    self.root.after(0, lambda trace_lines=list(lines): self._render_diagnostics(trace_lines))
+
+                structured = self.agent_runtime.invoke_streamed(
+                    request,
+                    schema_model,
+                    timeout_seconds=GUI_STREAM_TIMEOUT_SECONDS,
+                    max_events=GUI_STREAM_MAX_EVENTS,
+                    diagnostics_callback=schedule_diagnostics,
+                )
+                primary = self.agent_runtime._primary_output(render_kind, structured)
+                response = AgentResponse(
+                    output_text=primary,
+                    skill_id="agentic",
+                    model_used=request.selected_model,
+                    trace=list(self.agent_runtime._last_deep_agent_trace),
+                    execution_summary=self.agent_runtime.preview_execution_summary(request),
+                    structured_output=structured,
+                    primary_output=primary,
+                    render_kind=render_kind,
+                )
                 elapsed = time.time() - started
-                self.root.after(0, lambda: self._display_result(response))
+                self.root.after(0, lambda response=response: self._display_result(response))
                 self.root.after(0, lambda: self.status_var.set(f"Response ready ({elapsed:.2f}s)"))
             except AgentRuntimeError as exc:
                 self.root.after(0, lambda e=exc: messagebox.showerror("Error", f"{e.code}: {e.message}"))
