@@ -22,5 +22,5 @@ Task:
 
 Output requirements:
 - Return structured output containing both: 
-  - corrected text, including skill anme
-  - rewritten text, including skill name
+  - corrected text 
+  - rewritten text
