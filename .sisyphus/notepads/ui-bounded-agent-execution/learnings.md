@@ -13,3 +13,5 @@ Notes:
 - Stream tests patch global memory validation because skills/AGENTS.md is absent in the current working tree; diagnostics remain line-oriented via existing runtime trace helpers.
 
 - Runtime now exposes _event_payload, normalize_stream_event, normalize_and_trace_event, and stream_event_to_trace_lines; tuple events preserve explicit mode, plain payloads default to values, and diagnostics callbacks receive per-event line-oriented trace chunks.
+- invoke_streamed now uses time.monotonic() for deterministic wall-clock timeout enforcement in the streamed UI path.
+- Timeout failures keep SKILL_EXECUTION_FAILED and use a stable message containing "timeout exceeded" for focused assertions.

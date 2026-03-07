@@ -101,9 +101,9 @@ def test_timeout_fails(monkeypatch, runtime):
     monkeypatch.setitem(__import__("sys").modules, "deepagents", fake_module)
     monkeypatch.setitem(__import__("sys").modules, "deepagents.backends", fake_backends_module)
     monkeypatch.setattr(OCIOpenAIHelper, "get_client", staticmethod(lambda model_name, config: object()))
-    monkeypatch.setattr("ai_tools.agent_runtime.runtime.time.time", lambda: next(clock))
+    monkeypatch.setattr("ai_tools.agent_runtime.runtime.time.monotonic", lambda: next(clock))
 
-    with pytest.raises(SkillExecutionError, match="timeout exceeded") as exc:
+    with pytest.raises(SkillExecutionError, match="(?i)timeout exceeded") as exc:
         runtime.invoke_streamed(req, runtime._schema_for_request(req)[0], timeout_seconds=30)
 
     assert exc.value.code == "SKILL_EXECUTION_FAILED"

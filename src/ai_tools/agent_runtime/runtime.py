@@ -523,7 +523,7 @@ class DeepAgentRuntime:
         self._last_deep_agent_trace = []
         prompt = build_agent_prompt(request)
         payload = build_agent_payload(prompt)
-        started_at = time.time()
+        started_at = time.monotonic()
         events_seen = 0
 
         try:
@@ -535,7 +535,7 @@ class DeepAgentRuntime:
                 stream_iter = agent.stream(payload)
 
             for event in stream_iter:
-                if time.time() - started_at > timeout_seconds:
+                if time.monotonic() - started_at > timeout_seconds:
                     raise SkillExecutionError(
                         code="SKILL_EXECUTION_FAILED",
                         message="Stream aborted: timeout exceeded",
@@ -557,7 +557,7 @@ class DeepAgentRuntime:
                     structured = self._extract_structured_response(normalized_payload, schema_model)
                 except SkillExecutionError as exc:
                     if "missing structured_response" in exc.message:
-                        if time.time() - started_at > timeout_seconds:
+                        if time.monotonic() - started_at > timeout_seconds:
                             raise SkillExecutionError(
                                 code="SKILL_EXECUTION_FAILED",
                                 message="Stream aborted: timeout exceeded",
