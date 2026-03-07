@@ -123,7 +123,10 @@ def test_runtime_invokes_with_all_skills_and_memory(monkeypatch):
     messages = payload.get("messages")
     assert isinstance(messages, list) and messages
     content = str(messages[0].get("content", ""))
-    assert "Task nudge:" in content
+    assert (
+        "##Task to be performed:" in content
+        or "##Find & execute the skill for task:" in content
+    )
     assert "Answer the given question directly and concisely." in content
 
 
@@ -208,9 +211,9 @@ def test_bounded_stream_success(monkeypatch, runtime):
     diagnostics_calls: list[list[str]] = []
 
     class _StreamingAgent:
-        def stream(self, _payload, stream_mode="values"):
-            assert stream_mode == "values"
-            yield {"messages": [{"type": "human", "content": "hello"}]}
+        def stream(self, _payload, stream_mode="updates"):
+            assert stream_mode == "updates"
+            yield ("messages", {"messages": [{"type": "human", "content": "hello"}]})
             yield {
                 "messages": [{"type": "ai", "content": "done"}],
                 "structured_response": {"text": "ok"},
@@ -248,12 +251,15 @@ def test_bounded_stream_success_first_event(monkeypatch, runtime):
     diagnostics_calls: list[list[str]] = []
 
     class _StreamingAgent:
-        def stream(self, _payload, stream_mode="values"):
-            assert stream_mode == "values"
-            yield {
+        def stream(self, _payload, stream_mode="updates"):
+            assert stream_mode == "updates"
+            yield (
+                "updates",
+                {
                 "messages": [{"type": "ai", "content": "done immediately"}],
                 "structured_response": {"text": "ok"},
-            }
+                },
+            )
 
     def _fake_create_deep_agent(**_kwargs):
         return _StreamingAgent()
@@ -276,5 +282,5 @@ def test_bounded_stream_success_first_event(monkeypatch, runtime):
 
     assert result == {"text": "ok"}
     assert len(diagnostics_calls) == 1
-    assert any("[trace] stream_mode -> values" in line for line in diagnostics_calls[0])
+    assert any("[trace] stream_mode -> updates" in line for line in diagnostics_calls[0])
     assert any("[trace] ai -> done immediately" in line for line in diagnostics_calls[0])

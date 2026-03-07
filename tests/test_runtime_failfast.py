@@ -56,10 +56,10 @@ def test_no_invoke_fallback(monkeypatch, runtime):
         def invoke(self, _payload):
             raise AssertionError("invoke() fallback must not be used")
 
-        def stream(self, _payload, stream_mode="values"):
-            assert stream_mode == "values"
+        def stream(self, _payload, stream_mode="updates"):
+            assert stream_mode == "updates"
             while True:
-                yield {"messages": [{"type": "ai", "content": "still working"}]}
+                yield ("updates", {"messages": [{"type": "ai", "content": "still working"}]})
 
     def _fake_create_deep_agent(**_kwargs):
         return _StreamingAgent()
@@ -85,9 +85,9 @@ def test_max_events_zero(monkeypatch, runtime):
     diagnostics_calls: list[list[str]] = []
 
     class _StreamingAgent:
-        def stream(self, _payload, stream_mode="values"):
-            assert stream_mode == "values"
-            yield {"messages": [{"type": "ai", "content": "first event"}]}
+        def stream(self, _payload, stream_mode="updates"):
+            assert stream_mode == "updates"
+            yield ("updates", {"messages": [{"type": "ai", "content": "first event"}]})
 
     def _fake_create_deep_agent(**_kwargs):
         return _StreamingAgent()
@@ -119,14 +119,17 @@ def test_max_events_equal_boundary(monkeypatch, runtime):
     boundary = 3
 
     class _StreamingAgent:
-        def stream(self, _payload, stream_mode="values"):
-            assert stream_mode == "values"
-            yield {"messages": [{"type": "ai", "content": "step 1"}]}
-            yield {"messages": [{"type": "ai", "content": "step 2"}]}
-            yield {
-                "messages": [{"type": "ai", "content": "done"}],
-                "structured_response": {"text": "ok"},
-            }
+        def stream(self, _payload, stream_mode="updates"):
+            assert stream_mode == "updates"
+            yield ("updates", {"messages": [{"type": "ai", "content": "step 1"}]})
+            yield ("updates", {"messages": [{"type": "ai", "content": "step 2"}]})
+            yield (
+                "updates",
+                {
+                    "messages": [{"type": "ai", "content": "done"}],
+                    "structured_response": {"text": "ok"},
+                },
+            )
 
     def _fake_create_deep_agent(**_kwargs):
         return _StreamingAgent()
@@ -170,9 +173,9 @@ def test_timeout_fails(monkeypatch, runtime):
     clock = iter([0.0, 0.0, 31.0, 31.0])
 
     class _StreamingAgent:
-        def stream(self, _payload, stream_mode="values"):
-            assert stream_mode == "values"
-            yield {"messages": [{"type": "ai", "content": "slow event"}]}
+        def stream(self, _payload, stream_mode="updates"):
+            assert stream_mode == "updates"
+            yield ("updates", {"messages": [{"type": "ai", "content": "slow event"}]})
 
     def _fake_create_deep_agent(**_kwargs):
         return _StreamingAgent()

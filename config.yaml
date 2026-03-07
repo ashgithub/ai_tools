@@ -5,7 +5,7 @@ oci:
   base_url: "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1"
   compartment: "ocid1.compartment.oc1..aaaaaaaac3cxhzoka75zaaysugzmvhm3ni3keqvikawjxvwpz26mud622owa"
   profile: "API-USER"
-  default_model: "xai.grok-4-fast-non-reasoning"
+  default_model: "openai.gpt-5.4"
 
 model_cache:
   enabled: true
@@ -25,12 +25,12 @@ agentic_routing:
     - explain
     - ask
   nudge_prompts:
-    auto: "Choose the best skill for the user request and respond in the required schema."
+    auto: "Look at your list of skills and given text and pick the one that best matches the user intent and then answer the text using that skill" 
     proofread: "Proofread the given text. Return corrected and rewritten versions."
-    slack: "Proofread the given text for Slack. Keep it concise, friendly, and professional."
+    slack: "find a skill to proof read the given text for Slack"
     email: "Proofread the given text for email. Keep it clear, professional, and polished."
-    commands: "Recommend 1 to 3 command-line alternatives for the requested task."
-    explain: "Explain the given content clearly in simple, practical language."
+    commands: "find a skill to recommend 1 to 3 commands for the given text"
+    explain: "Find a skill to explain the given text"
     ask: "Answer the given question directly and concisely."
 
 logging:

@@ -71,21 +71,6 @@ else
 fi
 CACHE_PATH="${CACHE_DIR}/${CACHE_FILENAME}"
 
-is_stale=true
-if [[ -f "${CACHE_PATH}" ]]; then
-  now_epoch="$(date +%s)"
-  modified_epoch="$(stat -f %m "${CACHE_PATH}" 2>/dev/null || echo 0)"
-  age_hours=$(( (now_epoch - modified_epoch) / 3600 ))
-  if (( age_hours < REFRESH_HOURS )); then
-    is_stale=false
-  fi
-fi
-
-if [[ "${is_stale}" = false ]]; then
-  echo "Cache is fresh; no refresh needed: ${CACHE_PATH}"
-  exit 0
-fi
-
 oci_output="$(oci generative-ai model-collection list-models -c "${OCI_COMPARTMENT}" --profile "${OCI_PROFILE}")" || {
   echo "Cache refresh failed: OCI CLI list-models failed for profile=${OCI_PROFILE}" >&2
   exit 22
@@ -100,21 +85,6 @@ models_json="$(echo "${oci_output}" | jq -c '
     | select($has_chat != null)
     | (($item["display-name"] // $item.displayName // $item.display_name // "") | tostring) as $name
     | select($name != "")
-    | ($name | ascii_downcase) as $name_l
-    | (($item.id // "") | tostring | ascii_downcase) as $id_l
-    | (($item.vendor // "") | tostring | ascii_downcase) as $vendor_l
-    | select(
-        ($name_l | startswith("meta.llama"))
-        or ($name_l | startswith("openai."))
-        or ($name_l | startswith("xai.grok"))
-        or ($id_l | startswith("meta.llama"))
-        or ($id_l | startswith("openai."))
-        or ($id_l | startswith("xai.grok"))
-        or ($vendor_l | contains("llama"))
-        or ($vendor_l | contains("openai"))
-        or ($vendor_l | contains("grok"))
-        or ($vendor_l | contains("xai"))
-      )
     | {id: $name, display_name: $name}
   ]
   | unique_by(.id)

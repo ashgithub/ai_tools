@@ -6,6 +6,7 @@ from clients.multi_tool_client import (
     GUI_STREAM_TIMEOUT_SECONDS,
     UniversalTextToolsGUI,
     format_diagnostics_trace,
+    summarize_trace_lines,
 )
 from ai_tools.agent_runtime import AgentResponse
 from ai_tools.agent_runtime.errors import SkillExecutionError
@@ -31,6 +32,38 @@ def _make_gui() -> tuple[UniversalTextToolsGUI, _FakeAfterRoot]:
 def test_format_diagnostics_trace_with_lines():
     output = format_diagnostics_trace(["a", "b"])
     assert output == "a\nb"
+
+
+def test_format_diagnostics_trace_includes_summary_for_trace_lines():
+    output = format_diagnostics_trace(
+        [
+            "[trace] stream_mode -> updates",
+            "[trace] tool_call -> read_file args={}",
+            "[trace] skill_load -> explain",
+        ]
+    )
+    assert output.startswith("[summary] events=1 tool_calls=1 skill_reads=1")
+    assert "tool_breakdown=read_file:1" in output
+
+
+def test_summarize_trace_lines_ignores_non_trace_lines():
+    assert summarize_trace_lines(["plain", "lines"]) == ""
+
+
+def test_summarize_trace_lines_reports_tool_breakdown_counts():
+    summary = summarize_trace_lines(
+        [
+            "[trace] stream_mode -> updates",
+            "[trace] tool_call -> ls args={}",
+            "[trace] tool_call -> read_file args={}",
+            "[trace] tool_call -> read_file args={}",
+            "[trace] skill_load -> explain",
+        ]
+    )
+    assert summary == (
+        "[summary] events=1 tool_calls=3 skill_reads=1 "
+        "tool_breakdown=ls:1,read_file:2"
+    )
 
 
 def test_format_diagnostics_trace_empty():
@@ -65,6 +98,7 @@ def test_client_receives_diagnostics(monkeypatch):
         captured["schema_model"] = schema_model
         captured.update(kwargs)
         kwargs["diagnostics_callback"](["[trace] streamed 1", "[trace] streamed 2"])
+        kwargs["diagnostics_callback"](["[trace] streamed 3"])
         return {"text": "done"}
 
     gui.agent_runtime.invoke_streamed = fake_invoke_streamed
@@ -84,10 +118,11 @@ def test_client_receives_diagnostics(monkeypatch):
     assert summary_calls == ["summary"]
     assert diagnostics_calls[0] == ["[trace] request queued"]
     assert diagnostics_calls[1] == ["[trace] streamed 1", "[trace] streamed 2"]
+    assert diagnostics_calls[2] == ["[trace] streamed 1", "[trace] streamed 2", "[trace] streamed 3"]
     assert display_calls
     assert captured["timeout_seconds"] == GUI_STREAM_TIMEOUT_SECONDS
     assert captured["max_events"] == GUI_STREAM_MAX_EVENTS
-    assert captured["request"].input_text == "prompt"
+    assert getattr(captured.get("request"), "input_text", None) == "prompt"
     assert root.calls
     assert all(delay == 0 for delay, _ in root.calls)
 
@@ -112,7 +147,8 @@ def test_client_final_result_callback(monkeypatch):
     gui._display_result = lambda response: display_calls.append(response)
 
     def fake_invoke_streamed(request: Any, schema_model: Any, **kwargs: Any):
-        kwargs["diagnostics_callback"](["[trace] live"])
+        kwargs["diagnostics_callback"](["[trace] live 1"])
+        kwargs["diagnostics_callback"](["[trace] live 2"])
         return {"text": "final output"}
 
     gui.agent_runtime.invoke_streamed = fake_invoke_streamed

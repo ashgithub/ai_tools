@@ -50,14 +50,90 @@ def _extract_text(value: Any) -> str:
     return str(value)
 
 
+def _safe_json(value: Any) -> str:
+    try:
+        return json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True)
+    except (TypeError, ValueError):
+        return _extract_text(value)
+
+
 def _extract_skill_name_from_path(file_path: str) -> str | None:
     skill_match = SKILL_FILE_PATTERN.search(file_path)
     return skill_match.group(1) if skill_match else None
 
 
 def _shorten(value: Any, *, limit: int = 220) -> str:
-    text = _extract_text(value)
+    if isinstance(value, (dict, list)):
+        text = _safe_json(value)
+    else:
+        text = _extract_text(value)
     return text[:limit]
+
+
+def _event_display_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _event_display_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_event_display_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_event_display_value(item) for item in value]
+    if isinstance(value, str):
+        return value
+
+    raw_type = value.__class__.__name__.lower()
+    if raw_type in {"humanmessage", "aimessage", "toolmessage"} or hasattr(value, "content"):
+        payload: dict[str, Any] = {"type": value.__class__.__name__}
+        content = _extract_text(getattr(value, "content", ""))
+        if content:
+            payload["content"] = content
+        name = getattr(value, "name", None)
+        if name:
+            payload["name"] = name
+        tool_calls = getattr(value, "tool_calls", None)
+        if tool_calls:
+            payload["tool_calls"] = _event_display_value(tool_calls)
+        return payload
+
+    if hasattr(value, "model_dump"):
+        try:
+            return _event_display_value(value.model_dump())
+        except Exception:
+            return str(value)
+    if hasattr(value, "value"):
+        nested_value = getattr(value, "value", None)
+        if nested_value is not None:
+            return {"type": value.__class__.__name__, "value": _event_display_value(nested_value)}
+    return value
+
+
+def _pretty_stream_event(event: Any) -> str:
+    mode = "values"
+    payload = event
+    if isinstance(event, tuple) and len(event) >= 2:
+        mode = str(event[0])
+        payload = event[1]
+    rendered = _event_display_value(payload)
+    return f"[{mode}] {_safe_json(rendered)}"
+
+
+def _merge_stream_payload(target: dict[str, Any], payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return target
+    for key, value in payload.items():
+        if key == "messages" and isinstance(value, list):
+            existing = target.get("messages")
+            if isinstance(existing, list):
+                existing.extend(value)
+            else:
+                target["messages"] = list(value)
+            continue
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            merged = dict(target[key])
+            merged.update(value)
+            target[key] = merged
+            continue
+        target[key] = value
+    return target
 
 
 def _trace_message_lines(message: Any) -> list[str]:
@@ -195,13 +271,14 @@ def build_agent_prompt(request: AgentRequest) -> str:
     nudge_prompt = str(request.options.get("nudge_prompt", "")).strip()
     app_context = normalize_app_name(request.app_context)
 
-    prompt_parts = [request.input_text.strip()]
-    if nudge_prompt:
-        prompt_parts.append(f"Task nudge: {nudge_prompt}")
-    if nudge:
-        prompt_parts.append(f"Nudge: {nudge}")
+    prompt_parts = []
     if app_context:
-        prompt_parts.append(f"App context: {app_context}")
+        prompt_parts.append(f"##App context: {app_context}")
+    if nudge:
+        prompt_parts.append(f"##Nudge: {nudge}")
+    if nudge_prompt:
+        prompt_parts.append(f"##Find & execute the skill for task: {nudge_prompt}")
+    prompt_parts.append(f"## Original Text: {request.input_text.strip()}")
     return "\n\n".join(part for part in prompt_parts if part)
 
 
@@ -355,7 +432,7 @@ class DeepAgentRuntime:
         return nudge_prompts.get("auto", ""), "auto"
 
     def preview_execution_summary(self, request: AgentRequest) -> str:
-        schema_model, render_kind = self._schema_for_request(request)
+        schema_model, render_kind = self.prepare_request_context(request)
         return self._build_execution_summary(
             request,
             schema_model,
@@ -363,6 +440,22 @@ class DeepAgentRuntime:
             self.skills_root,
             self.agents_memory_path,
         )
+
+    def prepare_request_context(
+        self,
+        request: AgentRequest,
+        *,
+        schema_model: type[BaseModel] | None = None,
+        render_kind: RenderKind | None = None,
+    ) -> tuple[type[BaseModel], RenderKind]:
+        resolved_schema_model = schema_model
+        resolved_render_kind = render_kind
+        if resolved_schema_model is None or resolved_render_kind is None:
+            resolved_schema_model, resolved_render_kind = self._schema_for_request(request)
+        nudge_prompt, nudge_prompt_key = self._resolve_nudge_prompt(request, resolved_render_kind)
+        request.options["nudge_prompt"] = nudge_prompt
+        request.options["nudge_prompt_key"] = nudge_prompt_key
+        return resolved_schema_model, resolved_render_kind
 
     def invoke(self, request: AgentRequest) -> AgentResponse:
         trace: list[str] = []
@@ -382,10 +475,8 @@ class DeepAgentRuntime:
                     render_kind="refresh",
                 )
 
-            schema_model, render_kind = self._schema_for_request(request)
-            nudge_prompt, nudge_prompt_key = self._resolve_nudge_prompt(request, render_kind)
-            request.options["nudge_prompt"] = nudge_prompt
-            request.options["nudge_prompt_key"] = nudge_prompt_key
+            schema_model, render_kind = self.prepare_request_context(request)
+            nudge_prompt_key = str(request.options.get("nudge_prompt_key", "auto"))
             trace.append(f"schema={schema_model.__name__}")
             trace.append(f"render_kind={render_kind}")
             trace.append(f"nudge_prompt_key={nudge_prompt_key}")
@@ -461,6 +552,12 @@ class DeepAgentRuntime:
         structured_raw: Any = None
         if isinstance(result, dict):
             structured_raw = result.get("structured_response")
+            if structured_raw is None:
+                for value in result.values():
+                    if isinstance(value, dict) and "structured_response" in value:
+                        structured_raw = value.get("structured_response")
+                        if structured_raw is not None:
+                            break
         elif hasattr(result, "get"):
             try:
                 structured_raw = result.get("structured_response")
@@ -519,18 +616,31 @@ class DeepAgentRuntime:
         timeout_seconds: int = 30,
         max_events: int = 200,
         diagnostics_callback: Callable[[list[str]], None] | None = None,
+        event_callback: Callable[[str], None] | None = None,
+        debug: bool = False,
     ) -> dict[str, Any]:
         self._last_deep_agent_trace = []
+        _prepared_schema, render_kind = self.prepare_request_context(request, schema_model=schema_model)
+        nudge_prompt_key = str(request.options.get("nudge_prompt_key", "auto"))
+        self._last_deep_agent_trace.extend(
+            [
+                f"schema={schema_model.__name__}",
+                f"render_kind={render_kind}",
+                f"nudge_prompt_key={nudge_prompt_key}",
+                f"model={request.selected_model or self.settings.oci.default_model}",
+            ]
+        )
         prompt = build_agent_prompt(request)
         payload = build_agent_payload(prompt)
         started_at = time.monotonic()
         events_seen = 0
+        aggregated_payload: dict[str, Any] = {}
 
         try:
             self._last_deep_agent_trace.append("[trace] deep_agent_create -> create_deep_agent")
-            agent = self.create_agent(request, schema_model, debug=True)
+            agent = self.create_agent(request, schema_model, debug=debug)
             try:
-                stream_iter = agent.stream(payload, stream_mode="values")
+                stream_iter = agent.stream(payload, stream_mode="updates")
             except TypeError:
                 stream_iter = agent.stream(payload)
 
@@ -550,11 +660,15 @@ class DeepAgentRuntime:
 
                 _mode, normalized_payload, event_trace_lines = self.normalize_and_trace_event(event)
                 self._last_deep_agent_trace.extend(event_trace_lines)
+                if event_callback is not None:
+                    event_callback(_pretty_stream_event((_mode, normalized_payload)))
                 if diagnostics_callback is not None:
                     diagnostics_callback(list(event_trace_lines))
 
+                aggregated_payload = _merge_stream_payload(aggregated_payload, normalized_payload)
+
                 try:
-                    structured = self._extract_structured_response(normalized_payload, schema_model)
+                    structured = self._extract_structured_response(aggregated_payload, schema_model)
                 except SkillExecutionError as exc:
                     if "missing structured_response" in exc.message:
                         if time.monotonic() - started_at > timeout_seconds:

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import logging
 import sys
 import threading
@@ -27,7 +28,39 @@ GUI_STREAM_MAX_EVENTS = 200
 def format_diagnostics_trace(trace_lines: list[str] | None) -> str:
     if not trace_lines:
         return "No diagnostics captured for this run."
+    summary = summarize_trace_lines(trace_lines)
+    if summary:
+        return "\n".join([summary, *(str(line) for line in trace_lines)])
     return "\n".join(str(line) for line in trace_lines)
+
+
+def summarize_trace_lines(trace_lines: list[str] | None) -> str:
+    if not trace_lines:
+        return ""
+    normalized = [str(line) for line in trace_lines]
+    trace_count = sum(1 for line in normalized if line.startswith("[trace]"))
+    if trace_count == 0:
+        return ""
+
+    events = sum(1 for line in normalized if line.startswith("[trace] stream_mode ->"))
+    tool_call_lines = [line for line in normalized if line.startswith("[trace] tool_call ->")]
+    tool_calls = len(tool_call_lines)
+    skill_reads = sum(1 for line in normalized if line.startswith("[trace] skill_load ->"))
+    tool_breakdown = Counter()
+    for line in tool_call_lines:
+        remainder = line.replace("[trace] tool_call ->", "", 1).strip()
+        tool_name = remainder.split(" args=", 1)[0].strip()
+        if tool_name:
+            tool_breakdown[tool_name] += 1
+
+    if tool_breakdown:
+        breakdown = ",".join(f"{name}:{count}" for name, count in sorted(tool_breakdown.items()))
+        return (
+            f"[summary] events={events} tool_calls={tool_calls} "
+            f"skill_reads={skill_reads} tool_breakdown={breakdown}"
+        )
+
+    return f"[summary] events={events} tool_calls={tool_calls} skill_reads={skill_reads}"
 
 
 class UniversalTextToolsGUI:
@@ -298,9 +331,14 @@ class UniversalTextToolsGUI:
             started = time.time()
             try:
                 schema_model, render_kind = self.agent_runtime._schema_for_request(request)
+                live_trace_lines: list[str] = []
 
                 def schedule_diagnostics(lines: list[str]):
-                    self.root.after(0, lambda trace_lines=list(lines): self._render_diagnostics(trace_lines))
+                    live_trace_lines.extend(lines)
+                    self.root.after(0, lambda trace_lines=list(live_trace_lines): self._render_diagnostics(trace_lines))
+
+                def emit_pretty_event(event_text: str):
+                    print(event_text, flush=True)
 
                 structured = self.agent_runtime.invoke_streamed(
                     request,
@@ -308,6 +346,8 @@ class UniversalTextToolsGUI:
                     timeout_seconds=GUI_STREAM_TIMEOUT_SECONDS,
                     max_events=GUI_STREAM_MAX_EVENTS,
                     diagnostics_callback=schedule_diagnostics,
+                    event_callback=emit_pretty_event,
+                    debug=False,
                 )
                 primary = self.agent_runtime._primary_output(render_kind, structured)
                 response = AgentResponse(
