@@ -62,6 +62,9 @@ class ModelCache(BaseModel, extra="forbid"):
 class AgenticRouting(BaseModel, extra="forbid"):
     enabled: bool = Field(default=True)
     default_nudge: str = Field(default="auto")
+    system_prompt: str = Field(
+        default="you are a productivity assistant that always uses the set of defined skills to perform a task."
+    )
     nudge_presets: List[str] = Field(
         default_factory=lambda: [
             "auto",

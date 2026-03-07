@@ -350,6 +350,7 @@ class DeepAgentRuntime:
             "memory": memory_paths,
             "skills": skill_paths,
             "response_format": schema_model,
+            "system_prompt": self.settings.agentic_routing.system_prompt,
         }
         if debug:
             create_kwargs["debug"] = True

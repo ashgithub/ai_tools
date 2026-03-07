@@ -16,6 +16,7 @@ model_cache:
 agentic_routing:
   enabled: true
   default_nudge: "auto"
+  system_prompt: you are a productivity assistant that always uses the set of defined skills to perform a task.  
   nudge_presets:
     - auto
     - proofread
