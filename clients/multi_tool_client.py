@@ -13,6 +13,7 @@ from tkinter import messagebox, scrolledtext, ttk
 from typing import Any, Optional
 
 from ai_tools.agent_runtime import AgentRuntimeError, AgentRequest, AgentResponse, DeepAgentRuntime
+from ai_tools.agent_runtime.errors import SkillExecutionError
 from ai_tools.utils.config import get_settings
 from ai_tools.utils.model_cache import ModelCatalogBootstrapError, get_cached_or_refreshed_models
 
@@ -322,6 +323,17 @@ class UniversalTextToolsGUI:
                 elapsed = time.time() - started
                 self.root.after(0, lambda response=response: self._display_result(response))
                 self.root.after(0, lambda: self.status_var.set(f"Response ready ({elapsed:.2f}s)"))
+            except SkillExecutionError as exc:
+                failure_message = exc.message
+                lowered_message = failure_message.lower()
+                if "timeout exceeded" in lowered_message:
+                    status_message = "Failed: timeout"
+                elif "max-events exceeded" in lowered_message:
+                    status_message = "Failed: max-events"
+                else:
+                    status_message = f"Error: {exc.code}"
+                self.root.after(0, lambda e=exc: messagebox.showerror("Error", f"{e.code}: {e.message}"))
+                self.root.after(0, lambda message=status_message: self.status_var.set(message))
             except AgentRuntimeError as exc:
                 self.root.after(0, lambda e=exc: messagebox.showerror("Error", f"{e.code}: {e.message}"))
                 self.root.after(0, lambda e=exc: self.status_var.set(f"Error: {e.code}"))
