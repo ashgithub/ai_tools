@@ -5,7 +5,9 @@ from clients.multi_tool_client import (
     GUI_STREAM_MAX_EVENTS,
     GUI_STREAM_TIMEOUT_SECONDS,
     UniversalTextToolsGUI,
+    choose_preferred_default_model,
     format_diagnostics_trace,
+    is_openai_operation_compatible_model,
     summarize_trace_lines,
 )
 from ai_tools.agent_runtime import AgentResponse
@@ -48,6 +50,29 @@ def test_format_diagnostics_trace_includes_summary_for_trace_lines():
 
 def test_summarize_trace_lines_ignores_non_trace_lines():
     assert summarize_trace_lines(["plain", "lines"]) == ""
+
+
+def test_is_openai_operation_compatible_model_prefixes():
+    assert is_openai_operation_compatible_model("openai.gpt-5.2") is True
+    assert is_openai_operation_compatible_model("xai.grok-4") is True
+    assert is_openai_operation_compatible_model("meta.llama-4-scout") is True
+    assert is_openai_operation_compatible_model("cohere.command-a-03-2025") is False
+
+
+def test_choose_preferred_default_model_prefers_compatible_candidates():
+    models = [
+        "cohere.command-a-03-2025",
+        "meta.llama-4-scout-17b-16e-instruct",
+        "openai.gpt-5.2",
+    ]
+    assert (
+        choose_preferred_default_model(
+            models,
+            configured_default="openai.gpt-5.4",
+            catalog_default="cohere.command-a-03-2025",
+        )
+        == "openai.gpt-5.2"
+    )
 
 
 def test_summarize_trace_lines_reports_tool_breakdown_counts():
@@ -288,3 +313,61 @@ def test_client_handles_max_events_failure(monkeypatch):
     assert error_calls == [("Error", "SKILL_EXECUTION_FAILED: Stream aborted: max-events exceeded")]
     assert root.calls
     assert all(delay == 0 for delay, _ in root.calls)
+
+
+def test_client_handles_unsupported_operation_and_switches_model(monkeypatch):
+    gui, root = _make_gui()
+    _configure_failure_gui(gui)
+
+    status_updates: list[str] = []
+    busy_updates: list[bool] = []
+    error_calls: list[tuple[str, str]] = []
+    model_updates: list[str] = []
+
+    gui.status_var = cast(Any, types.SimpleNamespace(set=lambda value: status_updates.append(value)))
+    gui._set_busy = lambda busy: busy_updates.append(busy)
+    gui._render_summary = lambda summary: None
+    gui._render_diagnostics = lambda trace_lines: None
+    gui._display_result = lambda response: None
+    gui.available_models = [
+        "cohere.command-a-03-2025",
+        "meta.llama-4-scout-17b-16e-instruct",
+        "openai.gpt-5.2",
+    ]
+    gui.initial_default_model = "cohere.command-a-03-2025"
+    gui.model_var = cast(Any, types.SimpleNamespace(set=lambda value: model_updates.append(value)))
+
+    class _Args:
+        log_events = False
+
+    gui.args = cast(Any, _Args())
+
+    def fake_showerror(title: str, message: str):
+        error_calls.append((title, message))
+
+    def fake_invoke_streamed(request: Any, schema_model: Any, **kwargs: Any):
+        raise SkillExecutionError(
+            code="SKILL_EXECUTION_FAILED",
+            message="Error code: 400 - {'code': '400', 'message': 'Unsupported OpenAI operation'}",
+        )
+
+    gui.agent_runtime.invoke_streamed = fake_invoke_streamed
+
+    class _ImmediateThread:
+        def __init__(self, *, target: Any, daemon: Any):
+            self.target = target
+            self.daemon = daemon
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr("clients.multi_tool_client.threading.Thread", _ImmediateThread)
+    monkeypatch.setattr("clients.multi_tool_client.messagebox.showerror", fake_showerror)
+
+    gui._run_action()
+
+    assert model_updates[-1] == "openai.gpt-5.2"
+    assert busy_updates == [True, False]
+    assert any("unsupported model" in update.lower() for update in status_updates)
+    assert error_calls
+    assert "Switched to 'openai.gpt-5.2'" in error_calls[0][1]

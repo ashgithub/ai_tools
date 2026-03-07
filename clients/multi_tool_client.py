@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 GUI_STREAM_TIMEOUT_SECONDS = 30
 GUI_STREAM_MAX_EVENTS = 200
+OPENAI_OPERATION_COMPATIBLE_PREFIXES = ("openai.", "xai.", "meta.llama")
 
 
 def format_diagnostics_trace(trace_lines: list[str] | None) -> str:
@@ -61,6 +62,38 @@ def summarize_trace_lines(trace_lines: list[str] | None) -> str:
         )
 
     return f"[summary] events={events} tool_calls={tool_calls} skill_reads={skill_reads}"
+
+
+def is_openai_operation_compatible_model(model_id: str | None) -> bool:
+    model = (model_id or "").strip().lower()
+    if not model:
+        return False
+    return model.startswith(OPENAI_OPERATION_COMPATIBLE_PREFIXES)
+
+
+def choose_preferred_default_model(
+    models: list[str],
+    *,
+    configured_default: str | None,
+    catalog_default: str | None,
+) -> str:
+    if not models:
+        raise ValueError("models must not be empty")
+
+    for candidate in (configured_default, catalog_default):
+        if candidate and candidate in models and is_openai_operation_compatible_model(candidate):
+            return candidate
+
+    for prefix in OPENAI_OPERATION_COMPATIBLE_PREFIXES:
+        for model in models:
+            if model.startswith(prefix):
+                return model
+
+    if configured_default and configured_default in models:
+        return configured_default
+    if catalog_default and catalog_default in models:
+        return catalog_default
+    return models[0]
 
 
 class UniversalTextToolsGUI:
@@ -116,6 +149,7 @@ class UniversalTextToolsGUI:
         parser.add_argument("--window-y", type=int, help="Window Y")
         parser.add_argument("--window-width", type=int, default=900, help="Window width")
         parser.add_argument("--window-height", type=int, default=800, help="Window height")
+        parser.add_argument("--log-events", action="store_true", help="Print streamed event logs to stdout")
         return parser.parse_args()
 
     def _configure_window_geometry(self):
@@ -168,8 +202,11 @@ class UniversalTextToolsGUI:
         default_model = catalog.get("default_model")
         if not models:
             raise ModelCatalogBootstrapError("Model catalog is empty after cache/OCI loading.")
-        if not default_model or default_model not in models:
-            default_model = models[0]
+        default_model = choose_preferred_default_model(
+            models,
+            configured_default=self.settings.oci.default_model,
+            catalog_default=default_model,
+        )
         return models, default_model
 
     def _setup_ui(self):
@@ -338,7 +375,8 @@ class UniversalTextToolsGUI:
                     self.root.after(0, lambda trace_lines=list(live_trace_lines): self._render_diagnostics(trace_lines))
 
                 def emit_pretty_event(event_text: str):
-                    print(event_text, flush=True)
+                    if getattr(getattr(self, "args", None), "log_events", False):
+                        print(event_text, flush=True)
 
                 structured = self.agent_runtime.invoke_streamed(
                     request,
@@ -366,13 +404,33 @@ class UniversalTextToolsGUI:
             except SkillExecutionError as exc:
                 failure_message = exc.message
                 lowered_message = failure_message.lower()
+                user_error_message = f"{exc.code}: {failure_message}"
                 if "timeout exceeded" in lowered_message:
                     status_message = "Failed: timeout"
                 elif "max-events exceeded" in lowered_message:
                     status_message = "Failed: max-events"
+                elif "unsupported openai operation" in lowered_message:
+                    selected_model = request.selected_model or "(none)"
+                    configured_default = None
+                    settings_obj = getattr(self, "settings", None)
+                    if settings_obj is not None:
+                        configured_default = getattr(getattr(settings_obj, "oci", None), "default_model", None)
+                    if self.available_models:
+                        fallback_model = choose_preferred_default_model(
+                            self.available_models,
+                            configured_default=configured_default,
+                            catalog_default=self.initial_default_model,
+                        )
+                        self.root.after(0, lambda m=fallback_model: self.model_var.set(m))
+                        self.selected_model = fallback_model
+                        user_error_message = (
+                            f"{exc.code}: Model '{selected_model}' does not support this operation. "
+                            f"Switched to '{fallback_model}'."
+                        )
+                    status_message = f"Failed: unsupported model ({selected_model})"
                 else:
                     status_message = f"Error: {exc.code}"
-                self.root.after(0, lambda e=exc: messagebox.showerror("Error", f"{e.code}: {e.message}"))
+                self.root.after(0, lambda msg=user_error_message: messagebox.showerror("Error", msg))
                 self.root.after(0, lambda message=status_message: self.status_var.set(message))
             except AgentRuntimeError as exc:
                 self.root.after(0, lambda e=exc: messagebox.showerror("Error", f"{e.code}: {e.message}"))
@@ -408,8 +466,11 @@ class UniversalTextToolsGUI:
                 default_model = catalog.get("default_model")
                 if not models:
                     raise RuntimeError("Model catalog is empty after refresh.")
-                if not default_model or default_model not in models:
-                    default_model = models[0]
+                default_model = choose_preferred_default_model(
+                    models,
+                    configured_default=self.settings.oci.default_model,
+                    catalog_default=default_model,
+                )
 
                 def apply_ui():
                     self.available_models = models

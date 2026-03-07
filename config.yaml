@@ -25,12 +25,12 @@ agentic_routing:
     - explain
     - ask
   nudge_prompts:
-    auto: "Look at your list of skills and given text and pick the one that best matches the user intent and then answer the text using that skill" 
-    proofread: "Proofread the given text. Return corrected and rewritten versions."
-    slack: "find a skill to proof read the given text for Slack"
-    email: "Proofread the given text for email. Keep it clear, professional, and polished."
-    commands: "find a skill to recommend 1 to 3 commands for the given text"
-    explain: "Find a skill to explain the given text"
+    auto: "Given text and pick the one that best matches the user intent and then answer the text using that skill" 
+    proofread: "Proof read the given text. Return corrected and rewritten versions."
+    slack: "Proof read the given text for Slack/"
+    email: "Proof read the given text for email."
+    commands: "Recommend 1 to 3 terminal mac/linux commands for the given text"
+    explain: "Explain the given text in a clear and consise manner"
     ask: "Answer the given question directly and concisely."
 
 logging:
