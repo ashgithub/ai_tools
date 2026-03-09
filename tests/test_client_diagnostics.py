@@ -371,3 +371,41 @@ def test_client_handles_unsupported_operation_and_switches_model(monkeypatch):
     assert any("unsupported model" in update.lower() for update in status_updates)
     assert error_calls
     assert "Switched to 'openai.gpt-5.2'" in error_calls[0][1]
+
+
+def test_current_output_text_prefers_live_single_text_widget_contents():
+    gui, _root = _make_gui()
+    gui.output_text_widget = cast(Any, types.SimpleNamespace(get=lambda *_args: "edited output\n"))
+    response = cast(Any, types.SimpleNamespace(render_kind="single_text", primary_output="original output"))
+
+    assert gui._current_output_text(response) == "edited output"
+
+
+def test_current_output_text_prefers_selected_text_pair_tab_contents():
+    gui, _root = _make_gui()
+    gui.selected_text_pair = cast(Any, types.SimpleNamespace(get=lambda: "original rewritten"))
+    gui.rewritten_text_widget = cast(Any, types.SimpleNamespace(get=lambda *_args: "edited rewritten\n"))
+    gui.corrected_text_widget = cast(Any, types.SimpleNamespace(get=lambda *_args: "edited corrected\n"))
+    gui.response_notebook = cast(Any, types.SimpleNamespace(select=lambda: "current", tab=lambda *_args: "Corrected"))
+    response = cast(Any, types.SimpleNamespace(render_kind="text_pair", primary_output="original rewritten"))
+
+    assert gui._current_output_text(response) == "edited corrected"
+
+
+def test_copy_output_uses_live_widget_text():
+    gui, _root = _make_gui()
+    clipboard: list[str] = []
+    status_updates: list[str] = []
+
+    gui.last_agent_response = cast(Any, types.SimpleNamespace(render_kind="single_text", primary_output="original output"))
+    gui.output_text_widget = cast(Any, types.SimpleNamespace(get=lambda *_args: "edited output\n"))
+    gui.status_var = cast(Any, types.SimpleNamespace(set=lambda value: status_updates.append(value)))
+    gui.root = cast(Any, types.SimpleNamespace(
+        clipboard_clear=lambda: clipboard.clear(),
+        clipboard_append=lambda value: clipboard.append(value),
+    ))
+
+    gui._copy_output()
+
+    assert clipboard == ["edited output"]
+    assert status_updates[-1] == "Output copied to clipboard."

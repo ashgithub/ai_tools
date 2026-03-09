@@ -118,6 +118,10 @@ class UniversalTextToolsGUI:
         self.selected_alternative = tk.StringVar()
         self.selected_text_pair = tk.StringVar()
         self.is_busy = False
+        self.output_text_widget: Any = None
+        self.rewritten_text_widget: Any = None
+        self.corrected_text_widget: Any = None
+        self.response_notebook: Any = None
 
         self.model_var: Any = None
         self.model_combo: Any = None
@@ -491,6 +495,10 @@ class UniversalTextToolsGUI:
 
     def _display_result(self, response):
         self.last_agent_response = response
+        self.output_text_widget = None
+        self.rewritten_text_widget = None
+        self.corrected_text_widget = None
+        self.response_notebook = None
         for child in self.response_frame.winfo_children():
             child.destroy()
 
@@ -531,20 +539,21 @@ class UniversalTextToolsGUI:
 
             notebook = ttk.Notebook(self.response_frame)
             notebook.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+            self.response_notebook = notebook
 
             rewritten_tab = ttk.Frame(notebook)
             notebook.add(rewritten_tab, text="Rewritten")
             rewritten_text = scrolledtext.ScrolledText(rewritten_tab, height=16, wrap=tk.WORD)
             rewritten_text.pack(fill=tk.BOTH, expand=True)
             rewritten_text.insert("1.0", rewritten)
-            rewritten_text.config(state="disabled")
+            self.rewritten_text_widget = rewritten_text
 
             corrected_tab = ttk.Frame(notebook)
             notebook.add(corrected_tab, text="Corrected")
             corrected_text = scrolledtext.ScrolledText(corrected_tab, height=16, wrap=tk.WORD)
             corrected_text.pack(fill=tk.BOTH, expand=True)
             corrected_text.insert("1.0", corrected)
-            corrected_text.config(state="disabled")
+            self.corrected_text_widget = corrected_text
 
             notebook.select(0)
 
@@ -558,7 +567,7 @@ class UniversalTextToolsGUI:
             widget = scrolledtext.ScrolledText(self.response_frame, height=18, wrap=tk.WORD)
             widget.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
             widget.insert("1.0", text)
-            widget.config(state="disabled")
+            self.output_text_widget = widget
 
         if response.execution_summary:
             self._render_summary(response.execution_summary)
@@ -571,12 +580,7 @@ class UniversalTextToolsGUI:
             self.status_var.set("Nothing to copy.")
             return
 
-        if response.render_kind == "alternatives":
-            output = self.selected_alternative.get().strip() or response.primary_output.strip()
-        elif response.render_kind == "text_pair":
-            output = self.selected_text_pair.get().strip() or response.primary_output.strip()
-        else:
-            output = response.primary_output.strip()
+        output = self._current_output_text(response)
 
         if not output:
             self.status_var.set("Nothing to copy.")
@@ -593,16 +597,38 @@ class UniversalTextToolsGUI:
             self.root.quit()
             sys.exit(0)
 
-        if response.render_kind == "alternatives":
-            output = self.selected_alternative.get().strip() or response.primary_output.strip() or "no result"
-        elif response.render_kind == "text_pair":
-            output = self.selected_text_pair.get().strip() or response.primary_output.strip() or "no result"
-        else:
-            output = response.primary_output.strip() or "no result"
+        output = self._current_output_text(response) or "no result"
 
         print(output)
         self.root.quit()
         sys.exit(0)
+
+    def _read_widget_text(self, widget: Any) -> str:
+        if widget is None:
+            return ""
+        return str(widget.get("1.0", tk.END)).strip()
+
+    def _current_output_text(self, response: Any) -> str:
+        if response.render_kind == "alternatives":
+            return self.selected_alternative.get().strip() or response.primary_output.strip()
+
+        if response.render_kind == "text_pair":
+            selected_value = self.selected_text_pair.get().strip()
+            rewritten = self._read_widget_text(self.rewritten_text_widget)
+            corrected = self._read_widget_text(self.corrected_text_widget)
+
+            if self.response_notebook is not None:
+                selected_tab = self.response_notebook.tab(self.response_notebook.select(), "text")
+                if selected_tab == "Rewritten":
+                    return rewritten or corrected or response.primary_output.strip()
+                if selected_tab == "Corrected":
+                    return corrected or rewritten or response.primary_output.strip()
+
+            if selected_value == corrected:
+                return corrected or rewritten or response.primary_output.strip()
+            return rewritten or corrected or response.primary_output.strip()
+
+        return self._read_widget_text(self.output_text_widget) or response.primary_output.strip()
 
 
 def main():
